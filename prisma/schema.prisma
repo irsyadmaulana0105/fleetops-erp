@@ -1,0 +1,406 @@
+// FleetOps ERP — skema Prisma (PostgreSQL)
+// Diterjemahkan dari docs/data-model.md (DDL MySQL → PostgreSQL).
+//
+// Konvensi:
+//  - Model PascalCase, field camelCase; kolom & tabel tetap snake_case lewat @map/@@map
+//    sehingga SQL mentah/BI tool tetap mengikuti dokumen data-model.
+//  - Uang memakai Decimal(15,2). Jangan dikonversi ke Number untuk perhitungan —
+//    gunakan Prisma.Decimal agar tidak ada galat pembulatan floating point.
+//  - Nilai enum mengikuti DDL (huruf kecil).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  // URL koneksi diatur di prisma.config.ts (Prisma 7).
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Enum
+// ═══════════════════════════════════════════════════════════════════════
+
+enum Role {
+  owner
+  admin
+  mechanic
+
+  @@map("role")
+}
+
+enum SparepartCategory {
+  filters
+  hydraulics
+  engine
+  electrical
+  tires
+  other
+
+  @@map("sparepart_category")
+}
+
+enum PurchaseOrderStatus {
+  draft
+  ordered
+  customs_cleared
+  received
+  cancelled
+
+  @@map("purchase_order_status")
+}
+
+enum QuotationStatus {
+  draft
+  sent
+  approved
+  revised
+  rejected
+
+  @@map("quotation_status")
+}
+
+enum QuotationItemType {
+  sparepart
+  labor
+
+  @@map("quotation_item_type")
+}
+
+enum WorkOrderStatus {
+  scheduled
+  in_progress
+  completed
+  cancelled
+
+  @@map("work_order_status")
+}
+
+enum PhotoType {
+  before
+  process
+  after
+
+  @@map("photo_type")
+}
+
+enum ExpenseStatus {
+  pending
+  approved
+  rejected
+
+  @@map("expense_status")
+}
+
+enum InvoiceStatus {
+  unpaid
+  partially_paid
+  paid
+  overdue
+
+  @@map("invoice_status")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// A. Master data
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Pengguna sistem. Satu pengguna = satu peran (owner | admin | mechanic).
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String   @db.VarChar(100)
+  email        String   @unique @db.VarChar(100)
+  /// Hash bcrypt — tidak pernah menyimpan kata sandi asli.
+  passwordHash String   @map("password") @db.VarChar(255)
+  role         Role     @default(mechanic)
+  phone        String?  @db.VarChar(20)
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  workOrders WorkOrder[] @relation("MechanicWorkOrders")
+  expenses   Expense[]
+
+  @@map("users")
+}
+
+/// Klien (pabrik/perusahaan). `topDays` = Terms of Payment dalam hari (bawaan 180).
+model Customer {
+  id          Int      @id @default(autoincrement())
+  companyName String   @map("company_name") @db.VarChar(150)
+  picName     String   @map("pic_name") @db.VarChar(100)
+  picPhone    String   @map("pic_phone") @db.VarChar(20)
+  email       String?  @db.VarChar(100)
+  address     String   @db.Text
+  topDays     Int      @default(180) @map("top_days")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  quotations Quotation[]
+  workOrders WorkOrder[]
+  invoices   Invoice[]
+
+  @@index([companyName], map: "idx_customer_company")
+  @@map("customers")
+}
+
+/// Pemasok sparepart (impor / lokal).
+model Supplier {
+  id            Int      @id @default(autoincrement())
+  companyName   String   @map("company_name") @db.VarChar(150)
+  country       String   @default("Indonesia") @db.VarChar(50)
+  contactPerson String?  @map("contact_person") @db.VarChar(100)
+  phone         String?  @db.VarChar(20)
+  email         String?  @db.VarChar(100)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+/// Inventaris gudang. `stock <= minStock` memicu peringatan stok menipis.
+model Sparepart {
+  id        Int               @id @default(autoincrement())
+  sku       String            @unique @db.VarChar(50)
+  name      String            @db.VarChar(150)
+  category  SparepartCategory
+  stock     Int               @default(0)
+  minStock  Int               @default(2) @map("min_stock")
+  /// Harga modal (HPP)
+  buyPrice  Decimal           @default(0) @map("buy_price") @db.Decimal(15, 2)
+  /// Harga jual ke klien
+  sellPrice Decimal           @default(0) @map("sell_price") @db.Decimal(15, 2)
+  unit      String            @default("pcs") @db.VarChar(20)
+  createdAt DateTime          @default(now()) @map("created_at")
+  updatedAt DateTime          @updatedAt @map("updated_at")
+
+  purchaseOrderItems PurchaseOrderItem[]
+  quotationItems     QuotationItem[]
+
+  @@index([category], map: "idx_sparepart_category")
+  @@map("spareparts")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// B. Pengadaan / PO impor
+// ═══════════════════════════════════════════════════════════════════════
+
+/// PO ke supplier. Format nomor: PO-SUP/YYYY/MM/XXX
+model PurchaseOrder {
+  id             Int                 @id @default(autoincrement())
+  poNumber       String              @unique @map("po_number") @db.VarChar(50)
+  supplierId     Int                 @map("supplier_id")
+  status         PurchaseOrderStatus @default(draft)
+  /// Nomor airwaybill / resi pengiriman
+  trackingNumber String?             @map("tracking_number") @db.VarChar(100)
+  /// Estimasi tiba di gudang
+  etaDate        DateTime?           @map("eta_date") @db.Date
+  totalAmount    Decimal             @default(0) @map("total_amount") @db.Decimal(15, 2)
+  createdAt      DateTime            @default(now()) @map("created_at")
+  updatedAt      DateTime            @updatedAt @map("updated_at")
+
+  supplier Supplier            @relation(fields: [supplierId], references: [id], onDelete: Restrict)
+  items    PurchaseOrderItem[]
+
+  @@index([supplierId])
+  @@map("purchase_orders")
+}
+
+/// Baris barang pada PO. Constraint qty > 0 ditambahkan manual di migrasi SQL
+/// (Prisma belum mendukung CHECK constraint secara deklaratif).
+model PurchaseOrderItem {
+  id              Int     @id @default(autoincrement())
+  purchaseOrderId Int     @map("purchase_order_id")
+  sparepartId     Int     @map("sparepart_id")
+  qty             Int
+  unitPrice       Decimal @map("unit_price") @db.Decimal(15, 2)
+  subtotal        Decimal @db.Decimal(15, 2)
+
+  purchaseOrder PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  sparepart     Sparepart     @relation(fields: [sparepartId], references: [id], onDelete: Restrict)
+
+  @@index([purchaseOrderId])
+  @@index([sparepartId])
+  @@map("purchase_order_items")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// C. Penawaran & Work Order
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Penawaran harga resmi. Format nomor: PNW/YYYY/MM/XXX
+model Quotation {
+  id              Int             @id @default(autoincrement())
+  quotationNumber String          @unique @map("quotation_number") @db.VarChar(50)
+  customerId      Int             @map("customer_id")
+  validUntil      DateTime        @map("valid_until") @db.Date
+  status          QuotationStatus @default(draft)
+  subtotal        Decimal         @default(0) @db.Decimal(15, 2)
+  discount        Decimal         @default(0) @db.Decimal(15, 2)
+  /// PPN 11%
+  taxPpn          Decimal         @default(0) @map("tax_ppn") @db.Decimal(15, 2)
+  grandTotal      Decimal         @default(0) @map("grand_total") @db.Decimal(15, 2)
+  /// Token persetujuan klien (hash) untuk tautan bertanda tangan.
+  approvalToken   String?         @unique @map("approval_token") @db.VarChar(64)
+  approvedAt      DateTime?       @map("approved_at")
+  notes           String?         @db.Text
+  createdAt       DateTime        @default(now()) @map("created_at")
+  updatedAt       DateTime        @updatedAt @map("updated_at")
+
+  customer  Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  items     QuotationItem[]
+  workOrder WorkOrder?
+  invoice   Invoice?
+
+  @@index([customerId])
+  @@index([status])
+  @@map("quotations")
+}
+
+/// Baris penawaran: sparepart atau jasa (labor). `sparepartId` null jika labor.
+model QuotationItem {
+  id          Int               @id @default(autoincrement())
+  quotationId Int               @map("quotation_id")
+  itemType    QuotationItemType @map("item_type")
+  sparepartId Int?              @map("sparepart_id")
+  description String            @db.VarChar(255)
+  qty         Int               @default(1)
+  unitPrice   Decimal           @map("unit_price") @db.Decimal(15, 2)
+  subtotal    Decimal           @db.Decimal(15, 2)
+
+  quotation Quotation  @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+  sparepart Sparepart? @relation(fields: [sparepartId], references: [id], onDelete: SetNull)
+
+  @@index([quotationId])
+  @@index([sparepartId])
+  @@map("quotation_items")
+}
+
+/// SPK digital untuk mekanik. Format nomor: WO/YYYY/MM/XXX
+model WorkOrder {
+  id                Int             @id @default(autoincrement())
+  woNumber          String          @unique @map("wo_number") @db.VarChar(50)
+  /// Satu penawaran menghasilkan paling banyak satu WO (relasi 1→1 pada ERD).
+  quotationId       Int?            @unique @map("quotation_id")
+  customerId        Int             @map("customer_id")
+  mechanicId        Int             @map("mechanic_id")
+  /// Contoh: Toyota 8FD25 / Komatsu FD30
+  unitModel         String          @map("unit_model") @db.VarChar(100)
+  serialNumber      String?         @map("serial_number") @db.VarChar(100)
+  /// Jam kerja forklift saat diperbaiki
+  hourMeter         Int             @default(0) @map("hour_meter")
+  symptomNotes      String          @map("symptom_notes") @db.Text
+  laborFee          Decimal         @default(0) @map("labor_fee") @db.Decimal(15, 2)
+  status            WorkOrderStatus @default(scheduled)
+  /// Tanda tangan digital klien (Base64/SVG). Dokumen arsitektur menyarankan
+  /// pemindahan ke penyimpanan privat (R2/S3) pada Fase 5.
+  customerSignature String?         @map("customer_signature") @db.Text
+  scheduledAt       DateTime        @map("scheduled_at")
+  completedAt       DateTime?       @map("completed_at")
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  quotation Quotation?       @relation(fields: [quotationId], references: [id], onDelete: SetNull)
+  customer  Customer         @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  mechanic  User             @relation("MechanicWorkOrders", fields: [mechanicId], references: [id], onDelete: Restrict)
+  photos    WorkOrderPhoto[]
+  expenses  Expense[]
+  invoice   Invoice?
+
+  @@index([customerId])
+  @@index([mechanicId])
+  @@index([status, scheduledAt])
+  @@map("work_orders")
+}
+
+/// Dokumentasi foto lapangan.
+model WorkOrderPhoto {
+  id          Int       @id @default(autoincrement())
+  workOrderId Int       @map("work_order_id")
+  photoType   PhotoType @map("photo_type")
+  /// Path/URL objek di penyimpanan (Cloudflare R2 atau lokal)
+  filePath    String    @map("file_path") @db.VarChar(255)
+  uploadedAt  DateTime  @default(now()) @map("uploaded_at")
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+
+  @@index([workOrderId])
+  @@map("work_order_photos")
+}
+
+/// Pengeluaran uang jalan mekanik/helper (tabel `mechanic_expenses`).
+model Expense {
+  id               Int           @id @default(autoincrement())
+  workOrderId      Int           @map("work_order_id")
+  mechanicId       Int           @map("mechanic_id")
+  /// Misal: bensin, tol, parkir, konsumsi
+  description      String        @db.VarChar(255)
+  amount           Decimal       @db.Decimal(15, 2)
+  receiptPhotoPath String?       @map("receipt_photo_path") @db.VarChar(255)
+  status           ExpenseStatus @default(pending)
+  createdAt        DateTime      @default(now()) @map("created_at")
+
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  mechanic  User      @relation(fields: [mechanicId], references: [id], onDelete: Restrict)
+
+  @@index([workOrderId])
+  @@index([mechanicId])
+  @@map("mechanic_expenses")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// D. Penagihan & pembayaran
+// ═══════════════════════════════════════════════════════════════════════
+
+/// Faktur penagihan TOP. Format nomor: INV/YYYY/MM/XXX
+/// `dueDate` = `issueDate` + `customer.topDays`.
+model Invoice {
+  id                   Int           @id @default(autoincrement())
+  invoiceNumber        String        @unique @map("invoice_number") @db.VarChar(50)
+  /// ERD: quotation 1→1 work order 1→1 invoice.
+  quotationId          Int           @unique @map("quotation_id")
+  workOrderId          Int           @unique @map("work_order_id")
+  customerId           Int           @map("customer_id")
+  issueDate            DateTime      @map("issue_date") @db.Date
+  dueDate              DateTime      @map("due_date") @db.Date
+  status               InvoiceStatus @default(unpaid)
+  subtotal             Decimal       @db.Decimal(15, 2)
+  taxPpn               Decimal       @map("tax_ppn") @db.Decimal(15, 2)
+  discount             Decimal       @default(0) @db.Decimal(15, 2)
+  totalAmount          Decimal       @map("total_amount") @db.Decimal(15, 2)
+  paidAmount           Decimal       @default(0) @map("paid_amount") @db.Decimal(15, 2)
+  virtualAccountNumber String?       @map("virtual_account_number") @db.VarChar(50)
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Restrict)
+  workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Restrict)
+  customer  Customer  @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  payments  Payment[]
+
+  @@index([status], map: "idx_invoice_status")
+  @@index([dueDate], map: "idx_invoice_due_date")
+  @@index([customerId])
+  @@map("invoices")
+}
+
+/// Log pembayaran masuk.
+model Payment {
+  id             Int      @id @default(autoincrement())
+  invoiceId      Int      @map("invoice_id")
+  /// Transfer BCA, VA bank, cek/giro, dll.
+  paymentMethod  String   @map("payment_method") @db.VarChar(50)
+  /// Nomor referensi / ID webhook payment gateway — unik untuk mencegah pencatatan ganda.
+  transactionRef String?  @unique @map("transaction_ref") @db.VarChar(100)
+  amount         Decimal  @db.Decimal(15, 2)
+  paidAt         DateTime @map("paid_at")
+  notes          String?  @db.Text
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@map("payments")
+}

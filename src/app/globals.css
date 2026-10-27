@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+/*
+ * Token desain FleetOps — Tailwind CSS v4 (konfigurasi berbasis CSS, tanpa tailwind.config.js).
+ * Palet mengikuti dokumen: Slate (industri) + Amber (forklift).
+ *   Latar halaman  : slate-100
+ *   Sidebar/header : slate-900  (#0f172a)
+ *   Aksen          : amber-500  (#f59e0b)
+ */
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial,
+    "Noto Sans", sans-serif;
+
+  --color-shell: #0f172a; /* slate-900 */
+  --color-accent: #f59e0b; /* amber-500 */
+
+  --height-header: 3.5rem;
+  --height-bottom-nav: 4rem;
+  --width-sidebar: 16rem;
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-slate-100);
+    color: var(--color-slate-900);
+    font-family: var(--font-sans);
+    /* Angka rata (tabular) agar kolom rupiah/stok mudah dibandingkan. */
+    font-variant-numeric: tabular-nums;
+    min-height: 100dvh;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * Satu-satunya elemen dekoratif: garis belang peringatan seperti pada
+ * garpu forklift dan marka area gudang. Dipakai hanya di bawah logo.
+ */
+.hazard-stripe {
+  height: 6px;
+  background-image: repeating-linear-gradient(
+    -45deg,
+    var(--color-accent) 0 8px,
+    var(--color-shell) 8px 16px
+  );
+}
+
+/* Ruang aman untuk bottom navigation di perangkat dengan notch / gesture bar. */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
