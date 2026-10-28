@@ -11,7 +11,8 @@ import { ALL_NAV_ITEMS } from "@/lib/nav";
  * Saat sebuah modul dibuat (mis. `app/(dashboard)/spareparts/page.tsx`), folder statis
  * itu otomatis mengalahkan route dinamis ini — tidak perlu menghapus apa pun di sini.
  */
-const PLACEHOLDERS = ALL_NAV_ITEMS.filter((item) => item.href !== "/dashboard");
+// Modul Fase 0–2 (dashboard, sparepart, supplier, customer, pengguna, PO impor, work order) sudah punya halaman sendiri.
+const PLACEHOLDERS = ALL_NAV_ITEMS.filter((item) => item.phase >= 3);
 
 type Params = { section: string };
 

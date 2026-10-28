@@ -13,6 +13,12 @@ import {
 
 export type RoleName = "owner" | "admin" | "mechanic";
 
+export const ROLE_LABEL: Record<RoleName, string> = {
+  owner: "Pemilik",
+  admin: "Admin",
+  mechanic: "Mekanik",
+};
+
 export type NavItem = {
   /** Segmen URL, juga dipakai sebagai kunci halaman placeholder. */
   href: string;

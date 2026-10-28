@@ -2,6 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  experimental: {
+    // Foto kerja diunggah lewat server action; batas bawaan 1 MB terlalu kecil untuk foto kamera.
+    serverActions: { bodySizeLimit: "8mb" },
+  },
   async headers() {
     return [
       {

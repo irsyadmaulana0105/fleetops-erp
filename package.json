@@ -24,13 +24,15 @@
     "bcryptjs": "^3.0.3",
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
+    "jose": "^6.2.13",
     "lucide-react": "^1.62.0",
     "next": "^15.5.28",
     "pg": "^8.23.1",
     "prisma": "7.10.1",
     "react": "^19.1.10",
     "react-dom": "^19.1.10",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.3",

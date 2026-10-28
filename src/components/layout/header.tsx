@@ -1,5 +1,7 @@
-import { Bell } from "lucide-react";
-import { ROLE_LABEL, type SessionUser } from "@/lib/session";
+import { Bell, LogOut } from "lucide-react";
+import { logoutAction } from "@/app/login/actions";
+import { ROLE_LABEL } from "@/lib/nav";
+import type { SessionUser } from "@/lib/session";
 import { Brand } from "./brand";
 
 type HeaderProps = {
@@ -58,6 +60,17 @@ export function Header({ user, appName, companyName, unreadCount = 0 }: HeaderPr
               <span className="block text-xs text-slate-400">{ROLE_LABEL[user.role]}</span>
             </span>
           </div>
+
+          <form action={logoutAction}>
+            <button
+              type="submit"
+              aria-label="Keluar"
+              title="Keluar"
+              className="flex size-10 items-center justify-center rounded-full text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+            >
+              <LogOut aria-hidden="true" className="size-5" />
+            </button>
+          </form>
         </div>
       </div>
       {/* Garis belang hanya di HP; di desktop sudah ada di sidebar. */}

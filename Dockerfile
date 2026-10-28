@@ -50,6 +50,10 @@ COPY --from=builder --chown=nextjs:nodejs /app/prisma.config.ts ./prisma.config.
 COPY --chown=nextjs:nodejs docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
+# Folder penyimpanan foto & tanda tangan. Pasang volume di sini (lihat docker-compose.yml) agar berkas tidak hilang saat container dibuat ulang.
+ENV STORAGE_DIR=/app/storage
+RUN mkdir -p /app/storage && chown nextjs:nodejs /app/storage
+
 USER nextjs
 EXPOSE 3000
 

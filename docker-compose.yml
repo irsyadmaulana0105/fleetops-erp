@@ -18,6 +18,9 @@ services:
     environment:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://fleetuser:fleetpass@db:5432/fleetops_db?schema=public
+      - AUTH_SECRET=${AUTH_SECRET}
+    volumes:
+      - fleetops_storage:/app/storage
     networks:
       - proxy_net
       - fleetops_internal
@@ -40,4 +43,5 @@ services:
       - fleetops_internal
 
 volumes:
+  fleetops_storage:
   postgres_data:
