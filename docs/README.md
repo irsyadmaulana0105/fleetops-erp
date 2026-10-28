@@ -1,77 +1,87 @@
-# 📖 Dokumentasi Master & AI Prompting Guide — Forklift Pro ERP
+# FleetOps ERP — Technical Documentation
 
-Dokumen ini berfungsi sebagai pusat navigasi teknis dan panduan memberikan prompt (*prompt engineering*) untuk eksekusi **Vibe Coding** menggunakan **Claude Max**, **Cursor**, atau **Windsurf**.
+| Attribute | Value |
+| :-- | :-- |
+| System | FleetOps ERP (forklift service and spare-parts management, B2B) |
+| Document set | Technical documentation index |
+| Audience | Software architects, engineers, technical reviewers, operations stakeholders |
+| Stack | Next.js 15 (App Router, TypeScript), React 19, Prisma 7, PostgreSQL 16, Tailwind CSS v4 |
+| Language | English (technical); user-facing application text is Indonesian |
 
----
+## 1. Purpose and Scope
 
-## 📑 Daftar Isi Dokumentasi
+This document set specifies the architecture, data model, engineering standards, and delivery methodology of FleetOps ERP. It is the normative reference for design decisions and the context source for the AI-assisted development process described in `ai-development-roadmap.md`.
 
-1. **[System Architecture & Security (`architecture.md`)](./architecture.md)**
-   * Topologi Server & Cloudflare Free Tier WAF
-   * Stack Teknologi (Laravel 11 + Inertia.js + Vue 3)
-   * Alur Kerja Operasional (Quotation $\rightarrow$ Purchase Order Impor $\rightarrow$ Work Order $\rightarrow$ Invoice TOP 180 Hari)
-   * Panduan Keamanan (Signed URLs, Encrypted Storage, Rate Limiting)
-2. **[Data Model & Database Schema (`data-model.md`)](./data-model.md)**
-   * DDL SQL lengkap untuk semua tabel
-   * Aturan Relasi ORM Eloquent & Constraint Cascade
-   * Indexing & Penanganan jam kerja (*Hour Meter*)
+The system digitises the end-to-end service cycle of a forklift service and spare-parts business: imported spare-parts procurement, warehouse stock control, field work orders executed on mobile devices, quotations, and invoicing with extended payment terms (Terms of Payment up to 180 days).
 
----
+## 2. Document Index
 
-## 🎯 Panduan Vibe Coding dengan Claude Max
+| Document | Content | Primary audience |
+| :-- | :-- | :-- |
+| [`architecture.md`](./architecture.md) | Infrastructure topology, application layering, business workflow, security model, field-operations viewports, deployment | Architects, DevOps, security reviewers |
+| [`data-model.md`](./data-model.md) | Entity-relationship model, entity specifications, enumerations, state machines, document numbering, business invariants | Backend engineers, data analysts |
+| [`ai-development-roadmap.md`](./ai-development-roadmap.md) | AI-Assisted Development Framework, phased roadmap (Phase 0–5), AI Context Injection Protocols | Engineering leads, contributors |
+| [`../README.md`](../README.md) | Repository overview, local setup, deployment quick reference | All contributors |
 
-Untuk mendapatkan hasil kodingan yang presisi dan langsung siap pakai tanpa *bug*, gunakan alur bertahap (*step-by-step module generation*).
+## 3. Document Control
 
-### Aturan Emas Prompting:
-* **Prinsip Single-Responsibility:** Minta AI membuat 1 modul secara utuh (Migration, Model, Controller, Inertia Page).
-* **Sertakan Context Data Model:** Selalu salin bagian tabel terkait dari `docs/data-model.md` ke dalam prompt.
-* **Tegaskan Desain UI:** Minta UI dibuat dengan **Tailwind CSS** yang *Mobile-First*, responsif, dan konsisten memakai tema warna `slate` (industrial) dan `amber` (forklift).
+- The documents describe the system **as implemented** for Phases 0–2 and **as planned** for Phases 3–5. Planned content is explicitly labelled *Planned*.
+- Any change to the Prisma schema, a state machine, or an authorisation rule must be reflected in the corresponding document within the same change set.
+- Revision history is maintained in Section 6.
 
----
+## 4. Standard Engineering Practices
 
-## 📋 Ready-to-Use Prompt Templates untuk Claude Max
+The following practices apply to every change, whether authored by an engineer or produced by a code generation system.
 
-### Prompt 1: Generate Migration & Model Eloquent
-```text
-Saya sedang membangun sistem Forklift Pro ERP menggunakan Laravel 11.
-Tolong buatkan file Migration dan Model Eloquent lengkap untuk modul [NAMA_MODUL] berdasarkan spesifikasi dari `docs/data-model.md` berikut:
+1. **Single responsibility per delivery unit.** One module (data layer, validation, service, actions, pages) is delivered and verified as a whole before the next begins.
+2. **Phase gating.** A phase is not started until the previous phase has been verified and committed by the maintainer.
+3. **Specification before generation.** The relevant sections of `data-model.md` and `architecture.md` are supplied as context for every generation task. Generated output must not deviate from the specified schema.
+4. **Server-side authorisation.** Every server action and route handler performs its own role check. Hiding a navigation item is not an access control.
+5. **Validate at the boundary.** All external input is parsed with a zod schema before use. Error messages returned to users are specific and actionable.
+6. **Monetary precision.** Monetary values use `Decimal(15,2)` in the database and `Prisma.Decimal` in code. Floating-point arithmetic on money is prohibited.
+7. **Transactional integrity.** Operations that change stock, status, or financial state run in a single database transaction. State transitions use conditional updates (`updateMany` with a status predicate) to remain safe under concurrency.
+8. **Time handling.** Servers run in UTC. Business dates are interpreted and displayed in WIB (Asia/Jakarta) using the helpers in `src/lib/datetime.ts`.
+9. **Responsive by default.** Interfaces are built mobile-first and verified at a 390 px viewport and a tablet viewport, with no horizontal overflow.
+10. **Verification before acceptance.** `npm run typecheck`, `npm run build`, and the phase acceptance checklist must pass before a phase is committed.
+11. **Conventional commits.** Commit messages follow `type(scope): summary`, for example `feat(fase-2): ...`.
 
-[PASTE TABEL TERKAIT DARI docs/data-model.md]
+## 5. Error Handling and Troubleshooting Protocols
 
-Pastikan:
-1. Menggunakan tipe data dan foreign key constraint yang presisi.
-2. Menambahkan relasi Eloquent (hasMany, belongsTo, dll) secara lengkap.
-3. Menambahkan properti $fillable dan cast tipe data (misal: decimal, date, array JSON).
-```
+### 5.1 Application Error Handling Standard
 
-### Prompt 2: Generate Controller & Business Logic
-```text
-Buatkan Controller Laravel [NAMA_CONTROLLER] menggunakan Inertia.js response untuk menangani operasi CRUD [NAMA_MODUL].
+| Layer | Requirement |
+| :-- | :-- |
+| Input validation | zod schema; field-level messages returned to the form; no stack traces to the client |
+| Server actions | Return a typed result (`ok` / field errors / form error). Unique-constraint violations (`P2002`) and foreign-key violations (`P2003`) are mapped to user-readable messages |
+| Transactions | Business-rule failures (for example insufficient stock) throw a domain error that rolls back the whole transaction |
+| Authorisation | Failures return a not-found response for resources the caller must not know exist |
+| Logging | Server-side errors are logged with context; secrets and personal data are never logged |
 
-Aturan Bisnis:
-1. Gunakan Form Request Validation terpisah untuk store dan update.
-2. Sertakan fitur penanganan error transaksi (DB::transaction) jika ada pembaruan stok gudang atau perhitungan uang.
-3. Kirim data ke Inertia Page dengan pagination dan filter pencarian.
-4. Implementasikan pemisahan role akses (Owner, Admin, Mekanik) menggunakan Policy / Gate.
-```
+### 5.2 Troubleshooting Procedure for Generated Code
 
-### Prompt 3: Generate Responsive Vue 3 Component (Mobile + Desktop)
-```text
-Buatkan halaman Vue 3 (Composition API dengan <script setup>) menggunakan Inertia.js dan Tailwind CSS untuk tampilan [NAMA_HALAMAN].
+When a defect is detected in generated or hand-written code, follow this procedure in order:
 
-Ketentuan Design & UX:
-1. Warna Utama: Industrial Slate (#0f172a) dan Accent Forklift Amber (#f59e0b).
-2. Layout Responsif: Tampilan Tabel bersih untuk Desktop, dan Tampilan Card ringkas untuk Layar Mobile (HP Mekanik).
-3. Sertakan Modal Form untuk Create/Edit dengan validasi error dari Inertia.
-4. Gunakan FontAwesome icons.
-5. Gunakan format mata uang Rupiah (Rp) untuk semua angka finansial.
-```
+1. **Capture** the complete error output (terminal, browser console, or server log) without truncation.
+2. **Classify** the failure: environment (missing variable, service not running, Prisma Client not generated), compile-time (type error), runtime (exception), or behavioural (incorrect result).
+3. **Isolate** the minimal set of files involved, including the schema excerpt from `data-model.md` that governs them.
+4. **Reproduce** the failure with the smallest possible input.
+5. **Remediate** under a constraint of no schema change unless the defect is demonstrably in the schema. When the generator is used for remediation, supply the error output, the affected files, and the constraint using the *Defect Remediation* protocol in `ai-development-roadmap.md`.
+6. **Verify** with `npm run typecheck`, `npm run build`, and the failing scenario. Add a regression check when the defect was behavioural.
 
----
+### 5.3 Common Environment Failures
 
-## 💡 Tips Penyelesaian Problem (Debugging Prompt)
+| Symptom | Probable cause | Resolution |
+| :-- | :-- | :-- |
+| Type errors referencing `@/generated/prisma` | Prisma Client not generated | `npm run db:generate` |
+| `Cannot resolve environment variable: DATABASE_URL` | `.env` missing or incomplete | Copy `.env.example` to `.env` and set `DATABASE_URL` |
+| `ECONNREFUSED` on first database query | PostgreSQL not running or wrong host/port | Start the database; verify `DATABASE_URL` |
+| Login fails with a server configuration message | `AUTH_SECRET` missing or shorter than the required length | Generate a value with `openssl rand -base64 48`; restart the server |
+| Upload rejected as too large | Request body above the server action limit | Confirm `experimental.serverActions.bodySizeLimit` in `next.config.mjs`; images are compressed client-side before upload |
+| Uploaded files disappear after redeploy | `/app/storage` is not backed by a persistent volume | Mount the `fleetops_storage` volume |
 
-Jika terjadi error saat proses *vibe coding*:
-1. Salin pesan error lengkap dari konsol/terminal.
-2. Sertakan file Controller dan Vue Component terkait.
-3. Berikan instruksi: *"Perbaiki error berikut tanpa mengubah struktur database di data-model.md."*
+## 6. Revision History
+
+| Version | Date | Description |
+| :-- | :-- | :-- |
+| 1.0 | 2026-10 | Initial specification (Laravel/Vue/MySQL planning baseline) |
+| 2.0 | 2026-10 | Re-baselined to the implemented stack (Next.js, Prisma, PostgreSQL); Phases 0–2 documented as implemented, Phases 3–5 as planned; terminology and structure standardised |

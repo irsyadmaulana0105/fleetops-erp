@@ -1,96 +1,132 @@
 # FleetOps ERP
 
-Sistem servis dan sparepart forklift B2B: stok sparepart impor, work order digital untuk mekanik di lapangan, penawaran, dan penagihan dengan TOP hingga 180 hari.
+Enterprise resource planning system for B2B forklift service and spare-parts operations: imported spare-parts procurement, warehouse stock control, digital work orders executed on mobile devices by field teams, quotations, and invoicing with Terms of Payment of up to 180 days.
 
-| Komponen | Teknologi |
+## Technology Stack
+
+| Component | Technology |
 | :-- | :-- |
 | Framework | Next.js 15 (App Router, TypeScript, React 19) |
-| Database | PostgreSQL 16 + Prisma ORM 7 (driver adapter `pg`) |
-| UI | Tailwind CSS v4, ikon lucide-react |
-| PWA | `app/manifest.ts` + `public/sw.js` |
-| Deploy | Docker (`docker-compose.yml`), Coolify / VPS |
+| Database | PostgreSQL 16 with Prisma ORM 7 (`pg` driver adapter) |
+| Interface | Tailwind CSS v4, lucide-react icons |
+| PWA | `app/manifest.ts`, `public/sw.js` |
+| Deployment | Docker (`docker-compose.yml`), Coolify or VPS |
 
-## Status roadmap
+## Delivery Status
 
-| Fase | Isi | Status |
+| Phase | Scope | Status |
 | :-- | :-- | :-- |
-| 0 | Setup, skema Prisma, seed, layout dashboard + PWA | Selesai, menunggu verifikasi |
-| 1 | Master data & gudang sparepart | Belum |
-| 2 | PO impor & work order mobile mekanik | Belum |
-| 3 | Penawaran & invoice TOP 180 hari | Belum |
-| 4 | Monitoring finansial, webhook pembayaran, notifikasi | Belum |
-| 5 | Hardening, backup, deployment | Belum |
+| 0 | Foundation: schema, seed, dashboard layout, PWA | Delivered |
+| 1 | Authentication, role-based access, master data, low-stock alerts | Delivered |
+| 2 | Import purchase orders; mobile work orders for field teams | Delivered, pending verification |
+| 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF | Planned |
+| 4 | Financial monitoring, payment webhook, notifications | Planned |
+| 5 | Security hardening, backup, production deployment | Planned |
 
-## Menjalankan secara lokal
+## Documentation
 
-Prasyarat: Node.js ≥ 20.9 dan PostgreSQL 16.
+| Document | Content |
+| :-- | :-- |
+| [`docs/README.md`](docs/README.md) | Documentation index, Standard Engineering Practices, Error Handling & Troubleshooting Protocols |
+| [`docs/architecture.md`](docs/architecture.md) | Architecture and security guidelines |
+| [`docs/data-model.md`](docs/data-model.md) | Data model specification |
+| [`docs/ai-development-roadmap.md`](docs/ai-development-roadmap.md) | AI-Assisted Development Framework, roadmap, AI Context Injection Protocols |
+
+## Local Development
+
+Prerequisites: Node.js 20.9 or later and PostgreSQL 16.
 
 ```bash
 npm install
-cp .env.example .env          # sesuaikan DATABASE_URL
-npm run db:generate           # membuat Prisma Client di src/generated
-npm run db:deploy             # menerapkan migrasi ke database
-npm run db:seed               # data dummy (hanya development)
+cp .env.example .env          # set DATABASE_URL and AUTH_SECRET (openssl rand -base64 48)
+npm run db:generate           # generate Prisma Client into src/generated
+npm run db:deploy             # apply migrations
+npm run db:seed               # development sample data only
 npm run dev                   # http://localhost:3000
 ```
 
-Akun dummy (kata sandi bawaan `Fleetops#2026`, atau isi `SEED_DEFAULT_PASSWORD`):
-`owner@fleetops.test`, `admin@fleetops.test`, `mekanik1@fleetops.test`, `mekanik2@fleetops.test`.
+Sample accounts (default password `Fleetops#2026`, or set `SEED_DEFAULT_PASSWORD`): `owner@fleetops.test`, `admin@fleetops.test`, `mekanik1@fleetops.test`, `mekanik2@fleetops.test`.
 
-Autentikasi belum dibangun di Fase 0. `src/lib/session.ts` mengembalikan pengguna tetap supaya layout dan menu per peran bisa diuji.
+Quality gates: `npm run typecheck` and `npm run build`.
 
-## Docker / Coolify
+### Authentication and Access Control
 
-`docker-compose.yml` menjalankan `app` (Next.js) dan `db` (PostgreSQL 16). Jaringan `proxy_net` bersifat eksternal, jadi buat dulu jika menjalankan di luar Coolify:
+Email and password login (bcrypt). The session is a JWT in an `httpOnly` cookie valid for 12 hours. Role and active status are re-read from the database on every request, so a deactivated account loses access immediately.
+
+| Role | Access |
+| :-- | :-- |
+| Owner | All modules, including user management |
+| Admin | Dashboard, customers, suppliers, spare parts, purchase orders, work orders (create, assign, review expenses) |
+| Mechanic | Dashboard and own work orders only (start, photos, customer signature, expenses, completion) |
+
+Every server action performs its own role check (`authorize` in `src/lib/action-helpers.ts`). Hiding a menu item is not an access control.
+
+## Deployment (Docker / Coolify)
+
+`docker-compose.yml` defines `app` (Next.js) and `db` (PostgreSQL 16). The network `proxy_net` is external; create it when running outside Coolify:
 
 ```bash
 docker network create proxy_net
 docker compose up -d --build
 ```
 
-Saat container `app` start, `docker-entrypoint.sh` menjalankan `prisma migrate deploy` (dicoba ulang sampai database siap), lalu `next start`. Health check ada di `GET /api/health`.
+Required environment for `app`: `DATABASE_URL` and `AUTH_SECRET`.
 
-Seed tidak dijalankan otomatis di container. Seed menolak berjalan saat `NODE_ENV=production` kecuali `ALLOW_SEED=true`.
+```yaml
+      - AUTH_SECRET=${AUTH_SECRET}
+```
 
-## Struktur proyek
+### Uploaded File Storage
+
+Work photos, receipts, and customer signatures are stored on disk, outside `public/` and outside the database, and are served only through the authenticated route `/files/...`. Owner and admin may read all files; a mechanic may read only files of their own work orders. The location is set by `STORAGE_DIR` (default `./storage`; `/app/storage` in the container). Mount a persistent volume so files survive container recreation:
+
+```yaml
+    volumes:
+      - fleetops_storage:/app/storage
+```
+
+```yaml
+volumes:
+  postgres_data:
+  fleetops_storage:
+```
+
+The storage volume must be included in backups together with the database (Phase 5).
+
+At start, `docker-entrypoint.sh` runs `prisma migrate deploy` (retried until the database is ready) and then `next start`. The health check is `GET /api/health`. Seed data is not run automatically and refuses to run when `NODE_ENV=production` unless `ALLOW_SEED=true`.
+
+## Repository Structure
 
 ```text
 prisma/
-  schema.prisma          # 11 model utama + 2 tabel item, 9 enum
-  migrations/            # migrasi SQL (termasuk CHECK qty > 0 pada PO item)
-  seed.ts                # 1 owner, 1 admin, 2 mekanik, 3 customer, 10 sparepart
-prisma.config.ts         # URL datasource & perintah seed (Prisma 7)
+  schema.prisma          # data model (see docs/data-model.md)
+  migrations/            # SQL migrations (including CHECK qty > 0 on PO items)
+  seed.ts                # sample data
+prisma.config.ts         # datasource URL and seed command (Prisma 7)
 src/
   app/
-    (dashboard)/         # semua halaman ber-sidebar
-      layout.tsx         # memasang AppShell
-      dashboard/         # halaman dashboard
-      [section]/         # halaman sementara untuk modul yang belum dibangun
+    login/               # login and logout
+    (dashboard)/         # authenticated pages with sidebar
+      dashboard/ customers/ suppliers/ spareparts/ users/
+      purchase-orders/   # list, create, edit draft, detail with status workflow
+      work-orders/       # list, create, detail; [id]/ holds the mobile field-execution view
+      [section]/         # placeholder pages for modules not yet delivered
     api/health/          # health check
-    offline/             # halaman saat tidak ada koneksi (PWA)
-    manifest.ts
-  components/
-    layout/              # app-shell, sidebar, header, mobile-nav, brand
-    ui/                  # page-header, panel, stat-strip, empty-state
-    pwa/sw-register.tsx
+    files/[...path]/     # authenticated delivery of uploaded files
+    offline/             # PWA offline page
+  components/            # layout shell, UI primitives, PWA registration
   lib/
-    prisma.ts            # singleton Prisma Client
-    nav.ts               # definisi menu + hak akses per peran
-    session.ts           # SEMENTARA: pengguna tetap
-    format.ts            # format Rupiah & tanggal
-public/sw.js             # service worker
-docs/                    # dokumen rujukan asli
+    services/            # transactional business logic
+    validation/          # zod schemas and transition tables
+    storage.ts datetime.ts numbering.ts format.ts session.ts action-helpers.ts
+  middleware.ts          # authentication gate
+docs/                    # technical documentation
 ```
 
-## Catatan terhadap dokumen di `docs/`
+## Known Limitations (Current Release)
 
-Dokumen rujukan ditulis untuk Laravel + Vue + MySQL. Struktur datanya dipakai apa adanya; yang diterjemahkan:
-
-- DDL MySQL → `schema.prisma` (PostgreSQL). Nama tabel dan kolom tetap snake_case lewat `@map`.
-- `ENUM` MySQL → enum native PostgreSQL dengan nilai yang sama.
-- `BIGINT` → `Int`, agar id bisa dilewatkan dari Server Component ke Client Component tanpa masalah serialisasi `BigInt`.
-- Tabel `mechanic_expenses` dipetakan ke model `Expense`.
-- Tabel `purchase_order_items` dan `quotation_items` tetap ada sebagai model karena dibutuhkan relasi pada ERD.
-- Relasi 1→1 pada ERD (penawaran → work order → invoice) ditegakkan dengan `@unique`.
-- Eloquent trigger (potong stok saat WO selesai, hitung jatuh tempo, ubah status invoice) belum diimplementasikan; itu bagian Fase 2–4 dan akan menjadi logika di service layer, bukan trigger database.
-- Penyimpanan Cloudflare R2, Spatie Permission, dan CloudPanel pada dokumen lama tidak dipakai di stack ini.
+- Stock deduction on work-order completion reads the linked quotation and becomes fully effective with the quotation module (Phase 3).
+- Login rate limiting, session revocation on password change, and automated offsite backup are scheduled for Phase 5.
+- The customer signature is stored as an image without a signer name.
+- Only the assigned mechanic can perform field actions on a work order.
+- The container image build should be validated on the target host before production use.
