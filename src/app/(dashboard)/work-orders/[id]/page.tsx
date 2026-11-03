@@ -31,6 +31,7 @@ import {
   startWorkOrder,
   updateWorkOrder,
 } from "../actions";
+import { issueInvoiceAction } from "../../invoices/actions";
 import { WorkOrderFields } from "../work-order-fields";
 import { PhotoUploader } from "./photo-uploader";
 import { SignaturePad } from "./signature-pad";
@@ -49,7 +50,8 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
       mechanic: { select: { name: true, phone: true } },
       photos: { orderBy: { uploadedAt: "asc" } },
       expenses: { orderBy: { createdAt: "asc" } },
-      quotation: { select: { quotationNumber: true } },
+      quotation: { select: { id: true, quotationNumber: true } },
+      invoice: { select: { id: true, invoiceNumber: true } },
     },
   });
   // Mekanik hanya boleh membuka WO miliknya; selain itu seolah-olah tidak ada.
@@ -115,6 +117,20 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
                 />
               </FormDialog>
             )}
+            {isOffice && status === "completed" && workOrder.quotation && !workOrder.invoice && (
+              <FormDialog
+                triggerLabel="Terbitkan invoice"
+                triggerIcon="plus"
+                triggerVariant="primary"
+                title="Terbitkan invoice?"
+                submitLabel="Terbitkan"
+                action={issueInvoiceAction.bind(null, id)}
+              >
+                <p className="text-sm text-slate-700">
+                  Invoice dibuat dari penawaran <strong>{workOrder.quotation.quotationNumber}</strong>. Jatuh tempo = hari ini + TOP {workOrder.customer.topDays} hari.
+                </p>
+              </FormDialog>
+            )}
             {isOffice && (status === "scheduled" || status === "in_progress") && (
               <FormDialog
                 triggerLabel="Batalkan"
@@ -175,7 +191,16 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
               </>
             )}
             {workOrder.completedAt && <Info label="Selesai">{formatDateTime(workOrder.completedAt)}</Info>}
-            {workOrder.quotation && <Info label="Penawaran">{workOrder.quotation.quotationNumber}</Info>}
+            {isOffice && workOrder.quotation && (
+              <Info label="Penawaran">
+                <Link href={`/quotations/${workOrder.quotation.id}`} className="underline decoration-amber-500 decoration-2 underline-offset-4">{workOrder.quotation.quotationNumber}</Link>
+              </Info>
+            )}
+            {isOffice && workOrder.invoice && (
+              <Info label="Invoice">
+                <Link href={`/invoices/${workOrder.invoice.id}`} className="underline decoration-amber-500 decoration-2 underline-offset-4">{workOrder.invoice.invoiceNumber}</Link>
+              </Info>
+            )}
           </dl>
         </Panel>
 
@@ -293,6 +318,9 @@ export default async function WorkOrderDetailPage({ params }: { params: Promise<
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge tone={EXPENSE_STATUS_TONE[expense.status]}>{EXPENSE_STATUS_LABEL[expense.status]}</Badge>
+                      {expense.status === "approved" && (
+                        <Badge tone={expense.reimbursedAt ? "success" : "warning"}>{expense.reimbursedAt ? "Sudah dibayar" : "Belum dibayar"}</Badge>
+                      )}
                       {isOffice && expense.status === "pending" && (
                         <>
                           <FormDialog

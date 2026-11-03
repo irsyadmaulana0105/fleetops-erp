@@ -19,8 +19,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Dikecualikan: halaman login, halaman offline (di-precache service worker), health check, dan aset statis.
+  // Dikecualikan: halaman login, halaman persetujuan penawaran untuk klien (/approve, dijaga oleh tautan bertanda tangan), halaman offline (di-precache service worker), health check, dan aset statis.
   matcher: [
-    "/((?!login|offline|api/health|_next/static|_next/image|icons|sw\\.js|manifest\\.webmanifest|icon\\.png|apple-icon\\.png|favicon\\.ico).*)",
+    "/((?!login|approve/|offline|api/health|_next/static|_next/image|icons|sw\\.js|manifest\\.webmanifest|icon\\.png|apple-icon\\.png|favicon\\.ico).*)",
   ],
 };

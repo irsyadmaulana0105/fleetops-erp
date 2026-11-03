@@ -9,6 +9,7 @@ Enterprise resource planning system for B2B forklift service and spare-parts ope
 | Framework | Next.js 15 (App Router, TypeScript, React 19) |
 | Database | PostgreSQL 16 with Prisma ORM 7 (`pg` driver adapter) |
 | Interface | Tailwind CSS v4, lucide-react icons |
+| Documents | `pdf-lib` (quotation and invoice PDFs, server-side) |
 | PWA | `app/manifest.ts`, `public/sw.js` |
 | Deployment | Docker (`docker-compose.yml`), Coolify or VPS |
 
@@ -19,7 +20,7 @@ Enterprise resource planning system for B2B forklift service and spare-parts ope
 | 0 | Foundation: schema, seed, dashboard layout, PWA | Delivered |
 | 1 | Authentication, role-based access, master data, low-stock alerts | Delivered |
 | 2 | Import purchase orders; mobile work orders for field teams | Delivered, pending verification |
-| 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF | Planned |
+| 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF, reimbursement recap | Delivered, pending verification |
 | 4 | Financial monitoring, payment webhook, notifications | Planned |
 | 5 | Security hardening, backup, production deployment | Planned |
 
@@ -72,6 +73,8 @@ docker compose up -d --build
 
 Required environment for `app`: `DATABASE_URL` and `AUTH_SECRET`.
 
+Optional environment for quotation and invoice documents (Phase 3): `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_PHONE`, `COMPANY_EMAIL`, `COMPANY_BANK` (letterhead and payment instructions) and `APP_URL` (public base URL used in customer approval links, for example `https://erp.example.co.id`; when empty it is derived from the request host). Set `APP_URL` in production so links copied by an admin never point to an internal address.
+
 ```yaml
       - AUTH_SECRET=${AUTH_SECRET}
 ```
@@ -110,7 +113,11 @@ src/
       dashboard/ customers/ suppliers/ spareparts/ users/
       purchase-orders/   # list, create, edit draft, detail with status workflow
       work-orders/       # list, create, detail; [id]/ holds the mobile field-execution view
+      quotations/        # builder, detail with send/recall/decision, PDF
+      invoices/          # list, detail, PDF; issued from a completed work order
+      reimbursements/    # monthly mechanic expense recap
       [section]/         # placeholder pages for modules not yet delivered
+    approve/[token]/     # public customer approval page and PDF (signed link, no login)
     api/health/          # health check
     files/[...path]/     # authenticated delivery of uploaded files
     offline/             # PWA offline page
@@ -125,7 +132,8 @@ docs/                    # technical documentation
 
 ## Known Limitations (Current Release)
 
-- Stock deduction on work-order completion reads the linked quotation and becomes fully effective with the quotation module (Phase 3).
+- A work order without a linked quotation cannot be invoiced.
+- Overdue invoices are flagged in the display only; persistent status changes, payment recording, and notifications arrive in Phase 4.
 - Login rate limiting, session revocation on password change, and automated offsite backup are scheduled for Phase 5.
 - The customer signature is stored as an image without a signer name.
 - Only the assigned mechanic can perform field actions on a work order.

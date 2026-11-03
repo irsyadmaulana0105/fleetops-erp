@@ -232,22 +232,27 @@ model PurchaseOrderItem {
 
 /// Penawaran harga resmi. Format nomor: PNW/YYYY/MM/XXX
 model Quotation {
-  id              Int             @id @default(autoincrement())
-  quotationNumber String          @unique @map("quotation_number") @db.VarChar(50)
-  customerId      Int             @map("customer_id")
-  validUntil      DateTime        @map("valid_until") @db.Date
-  status          QuotationStatus @default(draft)
-  subtotal        Decimal         @default(0) @db.Decimal(15, 2)
-  discount        Decimal         @default(0) @db.Decimal(15, 2)
+  id                Int             @id @default(autoincrement())
+  quotationNumber   String          @unique @map("quotation_number") @db.VarChar(50)
+  customerId        Int             @map("customer_id")
+  validUntil        DateTime        @map("valid_until") @db.Date
+  status            QuotationStatus @default(draft)
+  subtotal          Decimal         @default(0) @db.Decimal(15, 2)
+  discount          Decimal         @default(0) @db.Decimal(15, 2)
   /// PPN 11%
-  taxPpn          Decimal         @default(0) @map("tax_ppn") @db.Decimal(15, 2)
-  grandTotal      Decimal         @default(0) @map("grand_total") @db.Decimal(15, 2)
-  /// Token persetujuan klien (hash) untuk tautan bertanda tangan.
-  approvalToken   String?         @unique @map("approval_token") @db.VarChar(64)
-  approvedAt      DateTime?       @map("approved_at")
-  notes           String?         @db.Text
-  createdAt       DateTime        @default(now()) @map("created_at")
-  updatedAt       DateTime        @updatedAt @map("updated_at")
+  taxPpn            Decimal         @default(0) @map("tax_ppn") @db.Decimal(15, 2)
+  grandTotal        Decimal         @default(0) @map("grand_total") @db.Decimal(15, 2)
+  /// Nonce acak (32 hex) milik tautan persetujuan. Tautan = id.nonce.tanda-tangan-HMAC; mengganti nonce
+  /// mematikan tautan lama. Null = belum ada tautan aktif.
+  approvalToken     String?         @unique @map("approval_token") @db.VarChar(64)
+  /// Batas berlaku tautan persetujuan (14 hari sejak dikirim).
+  approvalExpiresAt DateTime?       @map("approval_expires_at")
+  approvedAt        DateTime?       @map("approved_at")
+  /// Catatan dari klien (permintaan revisi / alasan penolakan) atau penanda persetujuan manual.
+  responseNote      String?         @map("response_note") @db.Text
+  notes             String?         @db.Text
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
 
   customer  Customer        @relation(fields: [customerId], references: [id], onDelete: Restrict)
   items     QuotationItem[]
@@ -340,6 +345,8 @@ model Expense {
   amount           Decimal       @db.Decimal(15, 2)
   receiptPhotoPath String?       @map("receipt_photo_path") @db.VarChar(255)
   status           ExpenseStatus @default(pending)
+  /// Saat uang jalan yang disetujui sudah diganti ke mekanik (rekap reimburse). Null = belum dibayar.
+  reimbursedAt     DateTime?     @map("reimbursed_at")
   createdAt        DateTime      @default(now()) @map("created_at")
 
   workOrder WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)

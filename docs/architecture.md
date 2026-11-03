@@ -3,7 +3,7 @@
 | Attribute | Value |
 | :-- | :-- |
 | Scope | Infrastructure, application architecture, business workflow, security, deployment |
-| Status | Phases 0–2 implemented; Phases 3–5 planned (labelled *Planned*) |
+| Status | Phases 0–3 implemented (Phase 3 pending verification); Phases 4–5 planned (labelled *Planned*) |
 | Related | [`data-model.md`](./data-model.md), [`ai-development-roadmap.md`](./ai-development-roadmap.md) |
 
 ## 1. Architectural Principles
@@ -46,7 +46,7 @@
 | Database | PostgreSQL 16 on the internal network `fleetops_internal`; not published to the public network |
 | Persistent volumes | `postgres_data` (database), `fleetops_storage` mounted at `/app/storage` (uploaded files) |
 | Health check | `GET /api/health` |
-| Environment | `DATABASE_URL`, `AUTH_SECRET`, `STORAGE_DIR` (default `./storage`; `/app/storage` in the container) |
+| Environment | `DATABASE_URL`, `AUTH_SECRET`, `STORAGE_DIR` (default `./storage`; `/app/storage` in the container). Documents: `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_PHONE`, `COMPANY_EMAIL`, `COMPANY_BANK` (letterhead and payment instructions), `APP_URL` (public base URL used in approval links) |
 | Seed data | Not executed automatically in containers; refuses to run when `NODE_ENV=production` unless `ALLOW_SEED=true` |
 
 ## 3. Application Architecture
@@ -86,10 +86,10 @@
  [1] Customer request (service or spare parts)
         │
         ▼
- [2] Quotation drafted                                       — Planned (Phase 3)
+ [2] Quotation drafted                                       — Implemented
         │  signed approval link sent to customer
         ▼
- [3] Customer approval (no login required)                   — Planned (Phase 3)
+ [3] Customer approval (no login required)                   — Implemented
         │
         ├── imported / indent items ──► [4a] Purchase order to supplier       — Implemented
         │                                    draft → ordered → customs_cleared → received
@@ -103,7 +103,7 @@
      completion deducts stock for the quotation's spare-part items
         │
         ▼
- [6] Invoice issued, due date = issue date + customer TOP     — Planned (Phase 3)
+ [6] Invoice issued, due date = issue date + customer TOP     — Implemented
         │
         ▼
  [7] Monitoring, payment webhook, reminders, overdue status   — Planned (Phase 4)
@@ -112,7 +112,7 @@
  [8] Settlement: invoice status paid                          — Planned (Phase 4)
 ```
 
-Note: stock deduction on work-order completion reads the linked quotation. It is verified at service level and becomes fully operational when the quotation module is delivered in Phase 3.
+Notes: (a) stock deduction on work-order completion reads the linked quotation; (b) mechanic expenses are an internal cost and are not billed — they are tracked in a monthly reimbursement recap; (c) an overdue invoice is currently computed for display only; persistent status transitions arrive with Phase 4.
 
 ## 5. Security Model
 
@@ -127,8 +127,8 @@ Note: stock deduction on work-order completion reads the linked quotation. It is
 
 | Role | Permitted scope |
 | :-- | :-- |
-| Owner | All modules, including user management. Planned: financial reports, receivables approval, audit log |
-| Admin | Dashboard, customers, suppliers, spare parts, purchase orders, work orders (create, assign, review expenses). Planned: quotations and invoices |
+| Owner | All modules, including user management and invoice deletion (unpaid only). Planned: financial reports, receivables approval, audit log |
+| Admin | Dashboard, customers, suppliers, spare parts, purchase orders, work orders (create, assign, review expenses), quotations, invoices, reimbursement recap. Cannot delete invoices |
 | Mechanic | Dashboard and **own** work orders only: start, photos, customer signature, expenses, completion. Labour fees are not shown. No access to purchase orders or work-order creation |
 
 Authorisation is enforced in every server action (`authorize` in `src/lib/action-helpers.ts`) and in every page and route handler. Resources a caller must not access return a not-found response.
@@ -145,9 +145,20 @@ Authorisation is enforced in every server action (`authorize` in `src/lib/action
 
 Planned (Phase 5): migration to private object storage with short-lived presigned URLs if the deployment requires it.
 
-### 5.4 Customer Approval Links — Planned (Phase 3)
+### 5.4 Customer Approval Links — Implemented (Phase 3)
 
-Quotation approval by the customer, without an account, uses a tamper-evident link: an HMAC-signed token bound to the quotation identifier and an expiry (14 days), verified server-side. The stored token is compared as a hash. Approval and revision requests are single-use state transitions.
+Quotation approval by the customer, without an account, uses a tamper-evident link of the form `/approve/<id>.<nonce>.<signature>`.
+
+| Element | Design |
+| :-- | :-- |
+| Nonce | 128-bit random value stored in `quotations.approval_token`. Issuing a new link replaces it and kills the old one; a recalled or revised quotation has no nonce |
+| Signature | `HMAC-SHA256(AUTH_SECRET, id : nonce : expiry)`, compared in constant time. The expiry is read from `approval_expires_at`, so editing it in the database also invalidates the link |
+| Expiry | 14 days from sending. Expired links show a dedicated message; every other failure shows one generic message so the cause is not disclosed |
+| Recomputation | The link is derived from database state, so an admin can copy it again without storing the secret part separately |
+| Single use | `approved`, `revised`, and `rejected` are conditional updates on `status = 'sent'` and the stored nonce. After a decision the page is read-only |
+| Scope | The public page and its PDF endpoint (`/approve/<token>[/pdf]`) are the only unauthenticated routes besides login; they expose one quotation and nothing else |
+
+The approval link is delivered by the admin (copy link or WhatsApp button); automated delivery is a Phase 4 notification concern.
 
 ### 5.5 Hardening — Planned (Phase 5)
 
@@ -165,6 +176,10 @@ Quotation approval by the customer, without an account, uses a tamper-evident li
 | Session revocation on password change | Not implemented (Phase 5) |
 | Offsite backup | Not implemented (Phase 5); the storage directory must be included in manual backups |
 | Customer signer name | Not captured; the signature is stored as an image only |
+| Customer decision notification | A customer's decision is visible in the application but does not notify anyone yet (Phase 4) |
+| Invoicing without a quotation | A work order without a linked quotation cannot be invoiced |
+| Overdue status | Computed for display and filtering; not persisted until the Phase 4 daily evaluation |
+| PDF fonts | Standard Helvetica (Latin characters); characters outside Latin-1 are replaced |
 | Field actions by non-assignee | Only the assigned mechanic can perform field actions; owner and admin cannot act on a mechanic's behalf |
 | Container image | Build verified by procedure only; to be validated on the target host before production use |
 

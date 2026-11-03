@@ -46,3 +46,31 @@ export function wibYearMonth(now: Date = new Date()): { year: string; month: str
   const iso = new Date(now.getTime() + WIB_OFFSET_MS).toISOString();
   return { year: iso.slice(0, 4), month: iso.slice(5, 7) };
 }
+
+/** Tanggal hari ini menurut WIB sebagai Date 00:00 UTC (bentuk kolom @db.Date). */
+export function wibToday(now: Date = new Date()): Date {
+  const shifted = new Date(now.getTime() + WIB_OFFSET_MS);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+}
+
+export function addDays(date: Date, days: number): Date {
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+/** Kunci bulan berjalan menurut WIB, mis. "2026-10". */
+export function wibMonthKey(now: Date = new Date()): string {
+  return new Date(now.getTime() + WIB_OFFSET_MS).toISOString().slice(0, 7);
+}
+
+/** "2026-10" → batas awal dan akhir bulan (WIB) sebagai instan UTC: [start, end). */
+export function parseMonthKey(value: string): { key: string; start: Date; end: Date } | null {
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(value);
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  return {
+    key: value,
+    start: new Date(Date.UTC(year, month - 1, 1) - WIB_OFFSET_MS),
+    end: new Date(Date.UTC(year, month, 1) - WIB_OFFSET_MS),
+  };
+}

@@ -5,7 +5,7 @@
 | Database | PostgreSQL 16 |
 | ORM | Prisma 7 (driver adapter `pg`) |
 | Source of truth | `prisma/schema.prisma` and `prisma/migrations/` |
-| Status | Entities for Phases 0–2 are in active use; quotation, invoice, and payment entities are defined in the schema and activated in Phases 3–4 |
+| Status | Entities for Phases 0–3 are in active use (Phase 3 delivered, pending verification); payment entities are defined in the schema and activated in Phase 4 |
 | Related | [`architecture.md`](./architecture.md) |
 
 ## 1. Entity-Relationship Overview
@@ -136,7 +136,7 @@ The one-to-one chain *quotation → work order → invoice* is enforced by `UNIQ
 
 ### 4.3 Quotations and Work Orders
 
-**`quotations`** — price offers. Number format `PNW/YYYY/MM/NNN`. *Activated in Phase 3.*
+**`quotations`** — price offers. Number format `PNW/YYYY/MM/NNN`. *Active since Phase 3.*
 
 | Column | Type | Constraints / notes |
 | :-- | :-- | :-- |
@@ -145,8 +145,10 @@ The one-to-one chain *quotation → work order → invoice* is enforced by `UNIQ
 | customer_id | integer | FK → customers, `Restrict` |
 | valid_until | date | |
 | status | `quotation_status` | default `draft` |
-| subtotal, discount, tax_ppn, grand_total | decimal(15,2) | VAT rate and applicability are defined per business tax status in Phase 3 |
-| approval_token | varchar(64) | unique; stored as a hash for signed customer approval |
+| subtotal, discount, tax_ppn, grand_total | decimal(15,2) | VAT (11%) is selectable per document and off by default; `tax_ppn = round(0.11 × (subtotal − discount))` when enabled |
+| approval_token | varchar(64) | unique; the active 32-hex **nonce** of the approval link. Null unless status is `sent` (or retained after a decision so the customer can still view the document). Replacing it invalidates the previous link |
+| approval_expires_at | timestamp | link expiry (14 days from sending); part of the signed payload |
+| response_note | text | customer's note on a revision or rejection, or the admin's recall note |
 | approved_at | timestamp | |
 | notes | text | |
 | created_at, updated_at | timestamp | |
@@ -206,9 +208,10 @@ Indexes: `customer_id`, `mechanic_id`, `(status, scheduled_at)`.
 | amount | decimal(15,2) | |
 | receipt_photo_path | varchar(255) | optional |
 | status | `expense_status` | default `pending`; reviewed by owner or admin |
+| reimbursed_at | timestamp | nullable; set when an approved expense has been repaid to the mechanic (monthly reimbursement recap). Null = not yet paid. Expenses are an internal cost and are never billed on the invoice |
 | created_at | timestamp | |
 
-### 4.4 Billing and Payments *(Phases 3–4)*
+### 4.4 Billing and Payments *(invoices: Phase 3; payments: Phase 4)*
 
 **`invoices`** — Number format `INV/YYYY/MM/NNN`.
 
@@ -266,7 +269,7 @@ Indexes: `status`, `due_date`, `customer_id`.
 - `in_progress → completed`: requires at least one `before` photo, one `after` photo, and a stored signature. Completion deducts stock for the linked quotation's `sparepart` items. If any item has insufficient stock, the entire transaction rolls back and the work order remains `in_progress`.
 - Cancellation is available to owner and admin, including for in-progress orders.
 
-### 5.3 Quotation *(Planned — Phase 3)*
+### 5.3 Quotation *(Implemented — Phase 3)*
 
 ```text
  draft ──► sent ──► approved
@@ -274,7 +277,12 @@ Indexes: `status`, `due_date`, `customer_id`.
              └────► rejected
 ```
 
-### 5.4 Invoice *(Planned — Phases 3–4)*
+- `draft | revised → sent`: generates a new nonce and a 14-day expiry; the admin copies the link or opens WhatsApp with a prefilled message.
+- `sent → approved | revised | rejected`: by the customer through the signed link, or recorded manually by an admin. Each is a conditional update on `status = 'sent'`, so only one decision can ever apply.
+- `sent → revised` by the admin (recall) invalidates the link. A revision requested by the customer also invalidates it.
+- Only `draft` and `revised` quotations can be edited; only `draft` can be deleted. A work order can be created only from an `approved` quotation that has no work order yet.
+
+### 5.4 Invoice *(issuing: Phase 3; payment transitions: Phase 4)*
 
 ```text
  unpaid ──► partially_paid ──► paid
@@ -288,8 +296,8 @@ Indexes: `status`, `due_date`, `customer_id`.
 | :-- | :-- | :-- |
 | Purchase order | `PO-SUP/YYYY/MM/NNN` | per month |
 | Work order | `WO/YYYY/MM/NNN` | per month |
-| Quotation | `PNW/YYYY/MM/NNN` | per month *(Planned)* |
-| Invoice | `INV/YYYY/MM/NNN` | per month *(Planned)* |
+| Quotation | `PNW/YYYY/MM/NNN` | per month |
+| Invoice | `INV/YYYY/MM/NNN` | per month |
 
 The year and month are taken in WIB. The next sequence number is derived from existing documents of the month; the `UNIQUE` constraint on the number column resolves concurrent creation, and creation is retried on `P2002`.
 
@@ -298,14 +306,17 @@ The year and month are taken in WIB. The next sequence number is derived from ex
 | # | Rule | Status |
 | :-- | :-- | :-- |
 | BR-1 | Stock increases only when a purchase order moves to `received` | Implemented |
-| BR-2 | Stock decreases only when a work order is completed, based on the linked quotation's spare-part items; insufficient stock aborts completion | Implemented (fully effective after Phase 3) |
+| BR-2 | Stock decreases only when a work order is completed, based on the linked quotation's spare-part items; insufficient stock aborts completion | Implemented; effective since Phase 3 |
 | BR-3 | A mechanic can view and act only on work orders assigned to them | Implemented |
 | BR-4 | Labour fees are not exposed to the mechanic role | Implemented |
 | BR-5 | Uploaded files are reachable only through the authenticated file route | Implemented |
-| BR-6 | `invoices.due_date = issue_date + customers.top_days` | Planned (Phase 3) |
+| BR-6 | `invoices.due_date = issue_date + customers.top_days`; an invoice is issued only from a completed work order whose quotation is approved, and copies that quotation's totals | Implemented (Phase 3) |
 | BR-7 | An invoice becomes `paid` when `paid_amount >= total_amount`; `partially_paid` when `0 < paid_amount < total_amount` | Planned (Phase 4) |
 | BR-8 | An unpaid or partially paid invoice past `due_date` becomes `overdue` through a daily evaluation | Planned (Phase 4) |
 | BR-9 | A payment with an existing `transaction_ref` is rejected (idempotent webhook handling) | Planned (Phase 4) |
+| BR-10 | An approval link is valid only while its nonce matches `quotations.approval_token`, its HMAC signature (over id, nonce, expiry) verifies, and it has not expired; a decision is single-use | Implemented (Phase 3) |
+| BR-11 | Approved mechanic expenses are an internal cost: they are reimbursed per mechanic per month (`reimbursed_at`) and are never part of an invoice | Implemented (Phase 3) |
+| BR-12 | An invoice with any payment cannot be deleted; only the owner may delete an unpaid invoice | Implemented (Phase 3) |
 
 Business logic is implemented in the service layer (`src/lib/services/`), not as database triggers, so that it is testable and visible in application code.
 

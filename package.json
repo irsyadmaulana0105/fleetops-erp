@@ -15,6 +15,7 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
+    "db:seed:demo": "tsx prisma/seed-demo.ts",
     "db:reset": "prisma migrate reset",
     "db:studio": "prisma studio"
   },
@@ -25,6 +26,7 @@
     "clsx": "^2.1.1",
     "dotenv": "^17.2.3",
     "jose": "^6.2.13",
+    "pdf-lib": "^1.17.1",
     "lucide-react": "^1.62.0",
     "next": "^15.5.28",
     "pg": "^8.23.1",

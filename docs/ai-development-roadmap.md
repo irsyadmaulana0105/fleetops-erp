@@ -3,7 +3,7 @@
 | Attribute | Value |
 | :-- | :-- |
 | Scope | Development framework, phased delivery plan, AI Context Injection Protocols |
-| Status | Phases 0–2 delivered; Phases 3–5 planned |
+| Status | Phases 0–3 delivered (Phases 2–3 pending maintainer verification); Phases 4–5 planned |
 | Related | [`README.md`](./README.md) (Standard Engineering Practices, Troubleshooting Protocols), [`architecture.md`](./architecture.md), [`data-model.md`](./data-model.md) |
 
 ## 1. AI-Assisted Development Framework
@@ -46,7 +46,7 @@ Deliver a production-grade ERP through a controlled process in which an automate
 | 0 | Project foundation: schema, seed, layout, PWA | Delivered |
 | 1 | Authentication, RBAC, master data, low-stock alerts | Delivered |
 | 2 | Import purchase orders, mobile work orders for field teams | Delivered — pending maintainer verification |
-| 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF | Planned |
+| 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF, reimbursement recap | Delivered — pending maintainer verification |
 | 4 | Financial monitoring, payment webhook, notifications | Planned |
 | 5 | Security hardening, backup, production deployment | Planned |
 
@@ -91,18 +91,24 @@ Deliver a production-grade ERP through a controlled process in which an automate
 
 **Known limitations.** See `architecture.md`, Section 5.6.
 
-### Phase 3 — Quotation and Invoice *(Planned)*
+### Phase 3 — Quotation and Invoice *(Delivered)*
 
 **Objective.** Issue formal quotations, obtain customer approval without an account, and invoice with extended payment terms.
 
 **Deliverables.**
-- Quotation builder: spare-part and labour lines, discount, tax handling according to the company's tax status, grand total.
-- Signed, expiring approval link (HMAC token, 14-day validity); public page for *Approve* and *Request revision*.
-- Automatic work-order and invoice creation from an approved quotation; `due_date = issue_date + customer TOP`.
-- PDF generation for quotation and invoice on company letterhead.
-- Stock deduction on work-order completion becomes fully effective.
+- Quotation builder: spare-part and labour lines, discount, optional per-document VAT (11%, off by default for a non-VAT-registered company), grand total computed with exact decimals.
+- Signed, expiring approval link (`/approve/<id>.<nonce>.<HMAC>`, 14-day validity); public page for *Approve*, *Request revision*, and *Reject*; link copy and WhatsApp share; manual recording of a decision by an admin.
+- Work order created from an approved quotation (customer fixed, labour fee prefilled); invoice issued from the completed work order with `due_date = issue_date + customer TOP`.
+- PDF generation for quotation and invoice on company letterhead (`pdf-lib`).
+- Stock deduction on work-order completion is now effective.
+- Monthly reimbursement recap per mechanic with a *paid* flag; approved expenses remain an internal cost and are not billed.
+- Dashboard figures from invoices (revenue of the month, receivables, overdue count, quotations awaiting a decision).
 
 **Acceptance criteria.** Totals are exact to the cent; approval links cannot be forged, reused after a decision, or used after expiry; PDFs render correctly with the company identity; document numbering is gap-tolerant and collision-free.
+
+**Verification.** Automated end-to-end suite (73 checks) passed on a production build: totals with discount and VAT, the full quotation lifecycle (send, tampered/unknown/expired/regenerated links, approve, revise, reject), work order from quotation, stock deduction, invoice due date (TOP 90 in the test), PDF output, reimbursement recap, role isolation, 390 px layout, and absence of console errors. Pending: maintainer verification.
+
+**Known limitations.** Work orders without a quotation cannot be invoiced; overdue is display-only until Phase 4; a customer decision does not notify anyone yet; no payment recording yet (Phase 4).
 
 ### Phase 4 — Financial Monitoring and Payments *(Planned)*
 

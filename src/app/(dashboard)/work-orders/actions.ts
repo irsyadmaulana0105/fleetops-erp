@@ -49,18 +49,37 @@ export async function createWorkOrder(_previous: ActionState, formData: FormData
   const invalid = await checkAssignees(parsed.data.customerId, parsed.data.mechanicId, formData);
   if (invalid) return invalid;
 
+  // WO yang dibuat dari penawaran: penawaran harus sudah disetujui, milik customer yang sama, dan belum punya WO.
+  const rawQuotationId = String(formData.get("quotationId") ?? "").trim();
+  let quotationId: number | null = null;
+  if (rawQuotationId !== "") {
+    quotationId = Number(rawQuotationId);
+    const quotation = Number.isInteger(quotationId)
+      ? await prisma.quotation.findUnique({ where: { id: quotationId }, select: { status: true, customerId: true, workOrder: { select: { id: true } } } })
+      : null;
+    if (!quotation) return errorState("Penawaran tidak ditemukan.");
+    if (quotation.status !== "approved") return errorState("Work order hanya bisa dibuat dari penawaran yang sudah disetujui.");
+    if (quotation.customerId !== parsed.data.customerId) return errorState("Customer harus sama dengan customer pada penawaran.");
+    if (quotation.workOrder) return errorState("Penawaran ini sudah punya work order.");
+  }
+
   let id: number;
   try {
     const created = await createWithNumber({
       code: "WO",
       listExisting: async (prefix) =>
         (await prisma.workOrder.findMany({ where: { woNumber: { startsWith: prefix } }, select: { woNumber: true } })).map((wo) => wo.woNumber),
-      create: (woNumber) => prisma.workOrder.create({ data: { ...parsed.data, woNumber }, select: { id: true } }),
+      create: (woNumber) => prisma.workOrder.create({ data: { ...parsed.data, quotationId, woNumber }, select: { id: true } }),
     });
     id = created.id;
   } catch (error) {
+    // Dua admin membuat WO dari penawaran yang sama: kolom unik quotation_id menolak yang kedua.
+    if (quotationId !== null && (await prisma.workOrder.findUnique({ where: { quotationId }, select: { id: true } }))) {
+      return errorState("Penawaran ini sudah punya work order.");
+    }
     return prismaErrorState(error, { values: submittedValues(formData) });
   }
+  if (quotationId !== null) revalidatePath(`/quotations/${quotationId}`);
 
   revalidateWorkOrder(id);
   redirect(`/work-orders/${id}`);

@@ -31,3 +31,18 @@ export const requiredWibDateTime = () =>
       }
       return date;
     });
+
+/** Tanggal wajib dari <input type="date">. */
+export const requiredDate = () =>
+  z
+    .string({ error: "Wajib diisi" })
+    .trim()
+    .min(1, "Wajib diisi")
+    .transform((value, ctx) => {
+      const date = parseDateOnly(value);
+      if (!date) {
+        ctx.addIssue({ code: "custom", message: "Tanggal tidak valid" });
+        return z.NEVER;
+      }
+      return date;
+    });

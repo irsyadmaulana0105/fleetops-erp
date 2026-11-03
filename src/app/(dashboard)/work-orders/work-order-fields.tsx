@@ -14,13 +14,24 @@ type Props = {
   customers: { id: number; companyName: string }[];
   mechanics: { id: number; name: string }[];
   defaults?: WorkOrderDefaults;
+  /** Penawaran sumber: customer dikunci dan dikirim sebagai isian tersembunyi. */
+  quotationId?: number;
 };
 
 /** Isian work order — dipakai bersama oleh halaman "Buat" dan dialog "Ubah". */
-export function WorkOrderFields({ customers, mechanics, defaults = {} }: Props) {
+export function WorkOrderFields({ customers, mechanics, defaults = {}, quotationId }: Props) {
+  const lockedCustomer = quotationId ? customers.find((c) => c.id === defaults.customerId) : undefined;
   return (
     <>
+      {quotationId && <input type="hidden" name="quotationId" value={quotationId} />}
       <div className="grid gap-4 sm:grid-cols-2">
+        {lockedCustomer ? (
+          <div>
+            <input type="hidden" name="customerId" value={lockedCustomer.id} />
+            <p className="text-sm font-medium text-slate-700">Customer (dari penawaran)</p>
+            <p className="mt-1.5 flex min-h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-900">{lockedCustomer.companyName}</p>
+          </div>
+        ) : (
         <Field
           name="customerId"
           label="Customer (lokasi pabrik)"
@@ -29,6 +40,7 @@ export function WorkOrderFields({ customers, mechanics, defaults = {} }: Props) 
           defaultValue={defaults.customerId}
           options={customers.map((c) => ({ value: String(c.id), label: c.companyName }))}
         />
+        )}
         <Field
           name="mechanicId"
           label="Mekanik"

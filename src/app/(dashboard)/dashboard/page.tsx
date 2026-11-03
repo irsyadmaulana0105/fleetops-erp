@@ -6,8 +6,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { PageHeader } from "@/components/ui/page-header";
 import { Panel } from "@/components/ui/panel";
 import { StatStrip, type Stat } from "@/components/ui/stat-strip";
-import { startOfWibDay } from "@/lib/datetime";
-import { formatDateTime } from "@/lib/format";
+import { startOfWibDay, wibMonthKey, wibToday } from "@/lib/datetime";
+import { formatDateTime, formatRupiah } from "@/lib/format";
 import { WO_STATUS_LABEL, WO_STATUS_TONE } from "@/lib/validation/work-order";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -47,19 +47,34 @@ export default async function DashboardPage() {
     take: 8,
   });
 
-  // Angka keuangan belum dihubungkan (Fase 3–4): null tampil sebagai "—", bukan angka karangan.
+  // Angka penagihan dihitung dari invoice. Pembayaran masuk (Fase 4) akan mengurangi piutang lewat paidAmount.
+  const today = wibToday();
+  // Kolom issue_date bertipe tanggal (00:00 UTC), jadi batas bulan juga 00:00 UTC.
+  const monthStart = new Date(`${wibMonthKey()}-01T00:00:00Z`);
+  const [revenue, openInvoices, overdueCount, awaitingDecision] = seesWarehouse
+    ? await Promise.all([
+        prisma.invoice.aggregate({ where: { issueDate: { gte: monthStart } }, _sum: { totalAmount: true } }),
+        prisma.invoice.findMany({ where: { status: { in: ["unpaid", "partially_paid", "overdue"] } }, select: { totalAmount: true, paidAmount: true } }),
+        prisma.invoice.count({ where: { status: { in: ["unpaid", "partially_paid", "overdue"] }, dueDate: { lt: today } } }),
+        prisma.quotation.count({ where: { status: "sent" } }),
+      ])
+    : [null, [], 0, 0];
+  const receivable = openInvoices.reduce((sum, i) => sum + Number(i.totalAmount) - Number(i.paidAmount), 0);
+
   const stats: Stat[] =
     user.role === "owner"
       ? [
-          { label: "Omset bulan ini", value: null, note: "Tersedia setelah modul invoice" },
-          { label: "Piutang berjalan", value: null, note: "Tersedia setelah modul invoice" },
-          { label: "Invoice lewat jatuh tempo", value: null, note: "Tersedia setelah modul invoice" },
+          { label: "Omset bulan ini", value: formatRupiah(Number(revenue?._sum.totalAmount ?? 0)), note: "Total invoice yang terbit" },
+          { label: "Piutang berjalan", value: formatRupiah(receivable), note: `${openInvoices.length} invoice belum lunas` },
+          { label: "Invoice lewat jatuh tempo", value: String(overdueCount), note: "Perlu ditagih" },
           { label: "Sparepart stok menipis", value: String(lowStockCount), note: `dari ${sparepartKinds} jenis barang` },
         ]
       : user.role === "admin"
         ? [
             { label: "Sparepart stok menipis", value: String(lowStockCount), note: "Perlu diisi ulang" },
             { label: "Jenis sparepart", value: String(sparepartKinds), note: "Terdaftar di gudang" },
+            { label: "Penawaran menunggu klien", value: String(awaitingDecision), note: "Sudah dikirim, belum diputuskan" },
+            { label: "Invoice lewat jatuh tempo", value: String(overdueCount), note: "Perlu ditagih" },
           ]
         : [];
 
