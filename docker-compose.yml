@@ -19,6 +19,8 @@ services:
       - NODE_ENV=production
       - DATABASE_URL=postgresql://fleetuser:fleetpass@db:5432/fleetops_db?schema=public
       - AUTH_SECRET=${AUTH_SECRET}
+      - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET}
+      - CRON_SECRET=${CRON_SECRET}
     volumes:
       - fleetops_storage:/app/storage
     networks:

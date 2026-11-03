@@ -121,6 +121,7 @@ model User {
 
   workOrders WorkOrder[] @relation("MechanicWorkOrders")
   expenses   Expense[]
+  notifications Notification[]
 
   @@map("users")
 }
@@ -391,6 +392,23 @@ model Invoice {
   @@index([dueDate], map: "idx_invoice_due_date")
   @@index([customerId])
   @@map("invoices")
+}
+
+/// Notifikasi in-app untuk pengguna (Fase 4). Dibuat, antara lain, saat pembayaran invoice tercatat.
+model Notification {
+  id        Int       @id @default(autoincrement())
+  userId    Int       @map("user_id")
+  title     String    @db.VarChar(150)
+  body      String    @db.Text
+  /// Rute di aplikasi yang dibuka saat notifikasi diklik, mis. /invoices/42.
+  href      String?   @db.VarChar(255)
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
 }
 
 /// Log pembayaran masuk.

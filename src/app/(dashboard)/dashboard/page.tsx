@@ -8,6 +8,7 @@ import { Panel } from "@/components/ui/panel";
 import { StatStrip, type Stat } from "@/components/ui/stat-strip";
 import { startOfWibDay, wibMonthKey, wibToday } from "@/lib/datetime";
 import { formatDateTime, formatRupiah } from "@/lib/format";
+import { evaluateOverdue, receivableAging } from "@/lib/services/payment";
 import { WO_STATUS_LABEL, WO_STATUS_TONE } from "@/lib/validation/work-order";
 import { prisma } from "@/lib/prisma";
 import { requireUser } from "@/lib/session";
@@ -47,7 +48,11 @@ export default async function DashboardPage() {
     take: 8,
   });
 
-  // Angka penagihan dihitung dari invoice. Pembayaran masuk (Fase 4) akan mengurangi piutang lewat paidAmount.
+  // Evaluasi jatuh tempo yang idempoten (BR-8): invoice lewat due_date menjadi `overdue` di database.
+  // Cron harian (/api/cron/overdue) tetap menjadi mekanisme utama; di sini sebagai pengaman saat aplikasi dipakai.
+  if (seesWarehouse) await evaluateOverdue();
+
+  // Angka penagihan dihitung dari invoice. Pembayaran masuk mengurangi piutang lewat paidAmount.
   const today = wibToday();
   // Kolom issue_date bertipe tanggal (00:00 UTC), jadi batas bulan juga 00:00 UTC.
   const monthStart = new Date(`${wibMonthKey()}-01T00:00:00Z`);
@@ -60,13 +65,15 @@ export default async function DashboardPage() {
       ])
     : [null, [], 0, 0];
   const receivable = openInvoices.reduce((sum, i) => sum + Number(i.totalAmount) - Number(i.paidAmount), 0);
+  const aging = user.role === "owner" ? await receivableAging(today) : null;
+  const overdueOutstanding = aging ? aging.slice(1).reduce((sum, bucket) => sum + Number(bucket.amount), 0) : 0;
 
   const stats: Stat[] =
     user.role === "owner"
       ? [
           { label: "Omset bulan ini", value: formatRupiah(Number(revenue?._sum.totalAmount ?? 0)), note: "Total invoice yang terbit" },
           { label: "Piutang berjalan", value: formatRupiah(receivable), note: `${openInvoices.length} invoice belum lunas` },
-          { label: "Invoice lewat jatuh tempo", value: String(overdueCount), note: "Perlu ditagih" },
+          { label: "Invoice lewat jatuh tempo", value: String(overdueCount), note: `Piutang lewat tempo ${formatRupiah(overdueOutstanding)}` },
           { label: "Sparepart stok menipis", value: String(lowStockCount), note: `dari ${sparepartKinds} jenis barang` },
         ]
       : user.role === "admin"
@@ -84,6 +91,38 @@ export default async function DashboardPage() {
 
       <div className="space-y-6">
         {stats.length > 0 && <StatStrip stats={stats} />}
+
+        {aging && (
+          <Panel title="Umur piutang">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-left text-xs text-slate-500">
+                    <th scope="col" className="px-4 py-2 sm:px-5">Keterlambatan</th>
+                    <th scope="col" className="px-4 py-2 text-right sm:px-5">Jumlah invoice</th>
+                    <th scope="col" className="px-4 py-2 text-right sm:px-5">Sisa tagihan</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {aging.map((bucket) => (
+                    <tr key={bucket.label}>
+                      <td className="px-4 py-2.5 text-slate-700 sm:px-5">{bucket.label}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-slate-900 sm:px-5">{bucket.count}</td>
+                      <td className="px-4 py-2.5 text-right font-medium text-slate-900 sm:px-5">{formatRupiah(bucket.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-200 text-sm font-semibold text-slate-900">
+                    <td className="px-4 py-2.5 sm:px-5">Total piutang berjalan</td>
+                    <td className="px-4 py-2.5 text-right sm:px-5">{aging.reduce((sum, b) => sum + b.count, 0)}</td>
+                    <td className="px-4 py-2.5 text-right sm:px-5">{formatRupiah(aging.reduce((sum, b) => sum + Number(b.amount), 0))}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </Panel>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel title="Work order hari ini">

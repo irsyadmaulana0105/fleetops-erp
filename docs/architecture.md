@@ -3,7 +3,7 @@
 | Attribute | Value |
 | :-- | :-- |
 | Scope | Infrastructure, application architecture, business workflow, security, deployment |
-| Status | Phases 0–3 implemented (Phase 3 pending verification); Phases 4–5 planned (labelled *Planned*) |
+| Status | Phases 0–4 implemented (Phases 2–4 pending maintainer verification); Phase 5 planned (labelled *Planned*) |
 | Related | [`data-model.md`](./data-model.md), [`ai-development-roadmap.md`](./ai-development-roadmap.md) |
 
 ## 1. Architectural Principles
@@ -106,13 +106,13 @@
  [6] Invoice issued, due date = issue date + customer TOP     — Implemented
         │
         ▼
- [7] Monitoring, payment webhook, reminders, overdue status   — Planned (Phase 4)
+ [7] Monitoring, payment webhook, reminders, overdue status   — Implemented (Phase 4)
         │
         ▼
- [8] Settlement: invoice status paid                          — Planned (Phase 4)
+ [8] Settlement: invoice status paid                          — Implemented (Phase 4)
 ```
 
-Notes: (a) stock deduction on work-order completion reads the linked quotation; (b) mechanic expenses are an internal cost and are not billed — they are tracked in a monthly reimbursement recap; (c) an overdue invoice is currently computed for display only; persistent status transitions arrive with Phase 4.
+Notes: (a) stock deduction on work-order completion reads the linked quotation; (b) mechanic expenses are an internal cost and are not billed — they are tracked in a monthly reimbursement recap; (c) overdue transitions are persisted by the daily evaluation (`/api/cron/overdue`, idempoten) and by a best-effort check on the dashboard.
 
 ## 5. Security Model
 
@@ -176,12 +176,24 @@ The approval link is delivered by the admin (copy link or WhatsApp button); auto
 | Session revocation on password change | Not implemented (Phase 5) |
 | Offsite backup | Not implemented (Phase 5); the storage directory must be included in manual backups |
 | Customer signer name | Not captured; the signature is stored as an image only |
-| Customer decision notification | A customer's decision is visible in the application but does not notify anyone yet (Phase 4) |
+| Customer decision notification | A customer's decision is visible in the application but does not notify anyone yet |
 | Invoicing without a quotation | A work order without a linked quotation cannot be invoiced |
-| Overdue status | Computed for display and filtering; not persisted until the Phase 4 daily evaluation |
+| Automated payment reminders | Reminders are sent manually by the admin via a WhatsApp button on the invoice; no automatic delivery is scheduled |
+| Payment provider integration | The webhook is provider-agnostic (HMAC); no provider-specific SDK is wired yet — the gateway must be configured to sign the exact raw body |
 | PDF fonts | Standard Helvetica (Latin characters); characters outside Latin-1 are replaced |
 | Field actions by non-assignee | Only the assigned mechanic can perform field actions; owner and admin cannot act on a mechanic's behalf |
 | Container image | Build verified by procedure only; to be validated on the target host before production use |
+
+### 5.7 Payment Webhook — Implemented (Phase 4)
+
+| Element | Design |
+| :-- | :-- |
+| Endpoint | `POST /api/webhooks/payment`; provider-agnostic JSON body (`invoice_id` or `invoice_number`, `payment_method`, `transaction_ref`, `amount`, optional `paid_at`, `notes`) |
+| Signature | `x-fleetops-signature` header: hex HMAC-SHA256 of the raw request body with `PAYMENT_WEBHOOK_SECRET`; compared in constant time; missing/invalid signature → 401; secret not configured → 503 |
+| Idempotency | `transaction_ref` is unique; a known reference returns `200 { "status": "duplicate" }` without touching amounts, so gateway retries never double-count |
+| Amount safety | Overpayment beyond the outstanding balance is rejected (422); concurrent payments on one invoice are serialised by a conditional update on the previous `paid_amount` |
+| Effect | `paid_amount` is incremented and the invoice becomes `partially_paid` or `paid` (BR-7); all active owners receive an in-app notification linking to the invoice |
+| Not rate limited | Rate limiting is Phase 5; expose the endpoint only to the gateway (firewall) until then |
 
 ## 6. Mobile Responsive Viewports for Field and Operational Teams
 
@@ -205,5 +217,5 @@ Field teams operate on mobile devices under variable connectivity. The work-orde
 | Health monitoring | `/api/health` | Uptime monitoring and alerting (Phase 5) |
 | Migrations | `prisma migrate deploy` at container start | Pre-deployment backup step (Phase 5) |
 | Backups | Manual | Automated, encrypted, offsite (Phase 5) |
-| Scheduled jobs | None | Daily overdue-invoice evaluation and reminders (Phase 4) |
+| Scheduled jobs | Daily overdue-invoice evaluation via `/api/cron/overdue` (idempotent; external scheduler with `CRON_SECRET`, plus a best-effort check on the owner/admin dashboard) | Reminder dispatch on a schedule (if a channel is chosen) |
 | Observability | Container logs | Structured logging and error reporting (Phase 5) |

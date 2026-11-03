@@ -5,7 +5,7 @@
 | Database | PostgreSQL 16 |
 | ORM | Prisma 7 (driver adapter `pg`) |
 | Source of truth | `prisma/schema.prisma` and `prisma/migrations/` |
-| Status | Entities for Phases 0–3 are in active use (Phase 3 delivered, pending verification); payment entities are defined in the schema and activated in Phase 4 |
+| Status | Phases 0–4 are in active use (Phases 2–4 pending maintainer verification); Phase 4 adds the `notifications` table (minor addition beyond the original spec) |
 | Related | [`architecture.md`](./architecture.md) |
 
 ## 1. Entity-Relationship Overview
@@ -211,7 +211,7 @@ Indexes: `customer_id`, `mechanic_id`, `(status, scheduled_at)`.
 | reimbursed_at | timestamp | nullable; set when an approved expense has been repaid to the mechanic (monthly reimbursement recap). Null = not yet paid. Expenses are an internal cost and are never billed on the invoice |
 | created_at | timestamp | |
 
-### 4.4 Billing and Payments *(invoices: Phase 3; payments: Phase 4)*
+### 4.4 Billing and Payments *(implemented — Phase 3/4)*
 
 **`invoices`** — Number format `INV/YYYY/MM/NNN`.
 
@@ -230,7 +230,7 @@ Indexes: `customer_id`, `mechanic_id`, `(status, scheduled_at)`.
 
 Indexes: `status`, `due_date`, `customer_id`.
 
-**`payments`**
+**`payments`** *(implemented — Phase 4)*
 
 | Column | Type | Constraints / notes |
 | :-- | :-- | :-- |
@@ -242,6 +242,20 @@ Indexes: `status`, `due_date`, `customer_id`.
 | paid_at | timestamp | |
 | notes | text | |
 | created_at | timestamp | |
+
+**`notifications`** *(added in Phase 4 — minor schema addition; target penerima saat ini: pemilik)*
+
+| Column | Type | Constraints / notes |
+| :-- | :-- | :-- |
+| id | integer | PK |
+| user_id | integer | FK → users, `Cascade` |
+| title | varchar(150) | |
+| body | text | |
+| href | varchar(255) | optional; rute aplikasi yang dibuka saat diklik |
+| read_at | timestamp | null = belum dibaca |
+| created_at | timestamp | |
+
+Index: `(user_id, read_at)`.
 
 ## 5. State Machines
 
@@ -311,9 +325,9 @@ The year and month are taken in WIB. The next sequence number is derived from ex
 | BR-4 | Labour fees are not exposed to the mechanic role | Implemented |
 | BR-5 | Uploaded files are reachable only through the authenticated file route | Implemented |
 | BR-6 | `invoices.due_date = issue_date + customers.top_days`; an invoice is issued only from a completed work order whose quotation is approved, and copies that quotation's totals | Implemented (Phase 3) |
-| BR-7 | An invoice becomes `paid` when `paid_amount >= total_amount`; `partially_paid` when `0 < paid_amount < total_amount` | Planned (Phase 4) |
-| BR-8 | An unpaid or partially paid invoice past `due_date` becomes `overdue` through a daily evaluation | Planned (Phase 4) |
-| BR-9 | A payment with an existing `transaction_ref` is rejected (idempotent webhook handling) | Planned (Phase 4) |
+| BR-7 | An invoice becomes `paid` when `paid_amount >= total_amount`; `partially_paid` when `0 < paid_amount < total_amount` | Implemented (Phase 4) |
+| BR-8 | An unpaid or partially paid invoice past `due_date` becomes `overdue` through a daily evaluation (`/api/cron/overdue`, idempoten) | Implemented (Phase 4) |
+| BR-9 | A payment with an existing `transaction_ref` is rejected (idempotent webhook handling) | Implemented (Phase 4) |
 | BR-10 | An approval link is valid only while its nonce matches `quotations.approval_token`, its HMAC signature (over id, nonce, expiry) verifies, and it has not expired; a decision is single-use | Implemented (Phase 3) |
 | BR-11 | Approved mechanic expenses are an internal cost: they are reimbursed per mechanic per month (`reimbursed_at`) and are never part of an invoice | Implemented (Phase 3) |
 | BR-12 | An invoice with any payment cannot be deleted; only the owner may delete an unpaid invoice | Implemented (Phase 3) |

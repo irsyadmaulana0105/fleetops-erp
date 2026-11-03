@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Bell, LogOut } from "lucide-react";
 import { logoutAction } from "@/app/login/actions";
 import { ROLE_LABEL } from "@/lib/nav";
@@ -32,8 +33,8 @@ export function Header({ user, appName, companyName, unreadCount = 0 }: HeaderPr
         <p className="hidden truncate text-sm text-slate-300 lg:block">{companyName}</p>
 
         <div className="flex items-center gap-1 sm:gap-3">
-          <button
-            type="button"
+          <Link
+            href="/notifications"
             aria-label={unreadCount > 0 ? `Notifikasi, ${unreadCount} belum dibaca` : "Notifikasi"}
             className="relative flex size-10 items-center justify-center rounded-full text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
           >
@@ -46,7 +47,7 @@ export function Header({ user, appName, companyName, unreadCount = 0 }: HeaderPr
                 {unreadCount > 99 ? "99+" : unreadCount}
               </span>
             )}
-          </button>
+          </Link>
 
           <div className="flex items-center gap-3 pl-1">
             <span

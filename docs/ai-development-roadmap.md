@@ -3,7 +3,7 @@
 | Attribute | Value |
 | :-- | :-- |
 | Scope | Development framework, phased delivery plan, AI Context Injection Protocols |
-| Status | Phases 0–3 delivered (Phases 2–3 pending maintainer verification); Phases 4–5 planned |
+| Status | Phases 0–4 delivered (Phases 2–4 pending maintainer verification); Phase 5 planned |
 | Related | [`README.md`](./README.md) (Standard Engineering Practices, Troubleshooting Protocols), [`architecture.md`](./architecture.md), [`data-model.md`](./data-model.md) |
 
 ## 1. AI-Assisted Development Framework
@@ -47,7 +47,7 @@ Deliver a production-grade ERP through a controlled process in which an automate
 | 1 | Authentication, RBAC, master data, low-stock alerts | Delivered |
 | 2 | Import purchase orders, mobile work orders for field teams | Delivered — pending maintainer verification |
 | 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF, reimbursement recap | Delivered — pending maintainer verification |
-| 4 | Financial monitoring, payment webhook, notifications | Planned |
+| 4 | Financial monitoring, payment webhook, notifications | Delivered — pending maintainer verification |
 | 5 | Security hardening, backup, production deployment | Planned |
 
 ## 3. Phase Specifications
@@ -110,17 +110,22 @@ Deliver a production-grade ERP through a controlled process in which an automate
 
 **Known limitations.** Work orders without a quotation cannot be invoiced; overdue is display-only until Phase 4; a customer decision does not notify anyone yet; no payment recording yet (Phase 4).
 
-### Phase 4 — Financial Monitoring and Payments *(Planned)*
+### Phase 4 — Financial Monitoring and Payments *(Delivered)*
 
 **Objective.** Provide the owner with receivables visibility and automate payment recognition.
 
 **Deliverables.**
-- Owner dashboard: revenue, receivables, overdue total, critical stock, aging schedule (0–30, 31–90, 91–180, over 180 days).
-- Payment recording and payment-provider webhook with signature verification and idempotency on `transaction_ref`.
-- Automatic invoice status transitions; daily overdue evaluation.
-- Owner notifications for received payments; customer reminders before due dates (channel to be confirmed).
+- Owner dashboard: revenue, receivables, overdue total, critical stock, aging schedule (0–30, 31–90, 91–180, > 180 days) — aging panel plus overdue outstanding on the overdue stat for the owner role.
+- Payment recording (manual by owner/admin) and a provider-agnostic payment webhook (`POST /api/webhooks/payment`) with HMAC-SHA256 signature verification (`x-fleetops-signature` over the raw body, `PAYMENT_WEBHOOK_SECRET`) and idempotency on `transaction_ref`.
+- Automatic invoice status transitions on payment (`unpaid`/`overdue` → `partially_paid` → `paid`); daily overdue evaluation (`/api/cron/overdue`, idempotent, guarded by `CRON_SECRET`) plus a best-effort check on the owner/admin dashboard.
+- In-app notifications for the owner on every recorded payment (new `notifications` table; bell in the header links to `/notifications`); customer reminders before due dates via a WhatsApp button on the invoice (manual send; no automatic channel).
+- Payment history panel on the invoice detail page.
 
 **Acceptance criteria.** Duplicate webhook deliveries do not double-count; partial payments produce `partially_paid`; the overdue evaluation is idempotent; aging buckets reconcile with the invoice list.
+
+**Verification.** `npm run typecheck` and `npm run build` pass; migration `20261103000000_fase4_notifications` applied; production container smoke test (`/api/health`, login page) passed. Automated end-to-end checks were not re-run; aging reconciliation and webhook idempotency should be exercised during maintainer verification. Pending: maintainer verification.
+
+**Known limitations.** Webhook is provider-agnostic; no provider-specific SDK or retry/queue semantics beyond idempotency; webhook endpoint is not rate limited (Phase 5); reminders to customers are manual (WhatsApp), there is no scheduled delivery; owner notifications cover payments only (quotation decisions still notify nobody); the `notifications` table is a minor addition beyond the original data model, recorded there.
 
 ### Phase 5 — Hardening, Backup, and Deployment *(Planned)*
 

@@ -7,6 +7,8 @@ import { Sidebar } from "./sidebar";
 type AppShellProps = {
   user: SessionUser;
   children: ReactNode;
+  /** Jumlah notifikasi belum dibaca untuk lencana lonceng di header. */
+  unreadCount?: number;
 };
 
 /**
@@ -14,7 +16,7 @@ type AppShellProps = {
  *  - ≥ 1024px : sidebar tetap di kiri + header di atas konten.
  *  - < 1024px : header ringkas di atas + bottom navigation (PWA di HP mekanik).
  */
-export function AppShell({ user, children }: AppShellProps) {
+export function AppShell({ user, children, unreadCount = 0 }: AppShellProps) {
   const appName = process.env.NEXT_PUBLIC_APP_NAME ?? "FleetOps ERP";
   const companyName = process.env.NEXT_PUBLIC_COMPANY_NAME ?? "PT Forklift Solusindo Utama";
 
@@ -28,7 +30,7 @@ export function AppShell({ user, children }: AppShellProps) {
       </a>
 
       <Sidebar role={user.role} appName={appName} companyName={companyName} />
-      <Header user={user} appName={appName} companyName={companyName} />
+      <Header user={user} appName={appName} companyName={companyName} unreadCount={unreadCount} />
 
       <main
         id="konten-utama"

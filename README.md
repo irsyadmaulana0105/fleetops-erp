@@ -21,7 +21,7 @@ Enterprise resource planning system for B2B forklift service and spare-parts ope
 | 1 | Authentication, role-based access, master data, low-stock alerts | Delivered |
 | 2 | Import purchase orders; mobile work orders for field teams | Delivered, pending verification |
 | 3 | Quotation and invoice (TOP up to 180 days), signed approval, PDF, reimbursement recap | Delivered, pending verification |
-| 4 | Financial monitoring, payment webhook, notifications | Planned |
+| 4 | Financial monitoring, payment webhook, notifications | Delivered, pending verification |
 | 5 | Security hardening, backup, production deployment | Planned |
 
 ## Documentation
@@ -74,6 +74,8 @@ docker compose up -d --build
 Required environment for `app`: `DATABASE_URL` and `AUTH_SECRET`.
 
 Optional environment for quotation and invoice documents (Phase 3): `COMPANY_NAME`, `COMPANY_ADDRESS`, `COMPANY_PHONE`, `COMPANY_EMAIL`, `COMPANY_BANK` (letterhead and payment instructions) and `APP_URL` (public base URL used in customer approval links, for example `https://erp.example.co.id`; when empty it is derived from the request host). Set `APP_URL` in production so links copied by an admin never point to an internal address.
+
+Optional environment for payments (Phase 4): `PAYMENT_WEBHOOK_SECRET` (enables `POST /api/webhooks/payment`; without it the endpoint answers 503) and `CRON_SECRET` (allows `GET/POST /api/cron/overdue` with `Authorization: Bearer <CRON_SECRET>`; schedule it daily, e.g. systemd timer or cron container). The owner dashboard also performs a best-effort overdue check, so the app stays correct without the cron, but the cron is the authoritative daily evaluation.
 
 ```yaml
       - AUTH_SECRET=${AUTH_SECRET}
@@ -133,7 +135,7 @@ docs/                    # technical documentation
 ## Known Limitations (Current Release)
 
 - A work order without a linked quotation cannot be invoiced.
-- Overdue invoices are flagged in the display only; persistent status changes, payment recording, and notifications arrive in Phase 4.
+- Payment recording (manual and via the HMAC-signed, idempotent `/api/webhooks/payment` webhook) and automatic `partially_paid`/`paid` transitions are live; overdue is persisted by the daily evaluation (`/api/cron/overdue`) and a best-effort dashboard check. Customer reminders are manual (WhatsApp button on the invoice); the webhook is not rate limited until Phase 5.
 - Login rate limiting, session revocation on password change, and automated offsite backup are scheduled for Phase 5.
 - The customer signature is stored as an image without a signer name.
 - Only the assigned mechanic can perform field actions on a work order.

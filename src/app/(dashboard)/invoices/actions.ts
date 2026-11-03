@@ -2,10 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { authorize, prismaErrorState } from "@/lib/action-helpers";
+import { Prisma } from "@/generated/prisma/client";
+import { authorize, parseForm, prismaErrorState } from "@/lib/action-helpers";
 import { errorState, type ActionState } from "@/lib/action-state";
 import { prisma } from "@/lib/prisma";
+import { recordPayment } from "@/lib/services/payment";
 import { issueInvoice } from "@/lib/services/invoice";
+import { paymentSchema } from "@/lib/validation/invoice";
 
 const OFFICE = ["owner", "admin"] as const;
 
@@ -33,6 +36,35 @@ export async function issueInvoiceAction(workOrderId: number, _previous: ActionS
   const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { quotationId: true } });
   revalidateInvoices(workOrderId, invoice?.quotationId);
   redirect(`/invoices/${invoiceId}`);
+}
+
+/** Catat pembayaran masuk untuk sebuah invoice (manual oleh admin/pemilik). */
+export async function recordPaymentAction(invoiceId: number, _previous: ActionState, formData: FormData): Promise<ActionState> {
+  const auth = await authorize(...OFFICE);
+  if (!auth.ok) return auth.state;
+
+  const parsed = parseForm(paymentSchema, formData);
+  if (!parsed.ok) return parsed.state;
+
+  try {
+    const result = await recordPayment({
+      invoiceId,
+      paymentMethod: parsed.data.paymentMethod,
+      transactionRef: parsed.data.transactionRef,
+      amount: new Prisma.Decimal(parsed.data.amount),
+      paidAt: new Date(),
+      notes: parsed.data.notes,
+    });
+    if (!result.ok) return errorState(result.message);
+    if (result.duplicate) return errorState("Referensi transaksi ini sudah pernah dicatat.");
+  } catch (error) {
+    return prismaErrorState(error, { uniqueField: "transactionRef", uniqueMessage: "Referensi transaksi ini sudah pernah dicatat." });
+  }
+
+  const invoice = await prisma.invoice.findUnique({ where: { id: invoiceId }, select: { workOrderId: true, quotationId: true } });
+  revalidateInvoices(invoice?.workOrderId, invoice?.quotationId);
+  revalidatePath(`/invoices/${invoiceId}`);
+  return { status: "success", message: "Pembayaran tercatat." };
 }
 
 /** Hapus invoice yang salah terbit. Hanya pemilik, hanya selama belum ada pembayaran sama sekali. */
